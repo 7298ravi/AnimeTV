@@ -3053,11 +3053,16 @@ function renderVidstreamControls() {
   `;
 }
 
+function setPlayerCinema(container, enabled, options = {}) {
+  if (!container) return;
+  container.classList.toggle("is-cinema", enabled);
+  document.body.classList.toggle("player-cinema-open", enabled);
+  if (!options.silent) showToast(enabled ? "Cinema mode" : "Normal player");
+}
+
 function requestPlayerFullscreen(container) {
   if (!container) return;
-  container.classList.toggle("is-cinema");
-  document.body.classList.toggle("player-cinema-open", container.classList.contains("is-cinema"));
-  showToast(container.classList.contains("is-cinema") ? "Cinema mode" : "Normal player");
+  setPlayerCinema(container, !container.classList.contains("is-cinema"));
 }
 
 let hlsScriptPromise = null;
@@ -3579,8 +3584,6 @@ function renderDirectVideoPlayer(frame, url, episode) {
   const spanishTrack = preferences.subtitles === "spanish-translated"
     ? null
     : preferredTrack || tracks.find((track) => isSpanishLanguage(track.language || track.label));
-  const audioTracks = getAvailableAudioTracks(episode);
-  const subtitleTracks = getAvailableSubtitles(episode);
   const selectedSource = getSelectedEpisodeSource(episode);
   frame.innerHTML = `
     <div class="video-player-shell vidstream-player">
@@ -3598,27 +3601,11 @@ function renderDirectVideoPlayer(frame, url, episode) {
         <div class="subtitle-status" id="subtitleStatus">Spanish subtitles preferred</div>
         ${renderVidstreamControls()}
       </div>
-      <div class="player-stream-toolbar">
-        <span class="source-badge">${escapeHtml(selectedSource?.label || "Direct")}</span>
-        <select id="directAudioLang" class="language-select focusable">
-          ${audioTracks.map((track) => `<option value="${track}" ${track === preferences.audio ? "selected" : ""}>${languageOptionLabel(track, "audio")}</option>`).join("")}
-        </select>
-        <select id="directSubtitleLang" class="language-select focusable">
-          ${subtitleTracks.map((track) => `<option value="${track}" ${track === preferences.subtitles ? "selected" : ""}>${languageOptionLabel(track, "subtitles")}</option>`).join("")}
-        </select>
-      </div>
       ${renderPlayerEpisodeActions(url)}
     </div>
   `;
-  frame.querySelector("#directAudioLang")?.addEventListener("change", (event) => {
-    setDefaultLanguage(event.target.value, getLanguagePreferences().subtitles);
-    showToast(`Audio: ${event.target.value}`);
-  });
-  frame.querySelector("#directSubtitleLang")?.addEventListener("change", (event) => {
-    setDefaultLanguage(getLanguagePreferences().audio, event.target.value);
-    showToast(`Subtitles: ${event.target.value === "none" ? "off" : event.target.value}`);
-    setupSpanishSubtitles(episode, tracks);
-  });
+  const shell = frame.querySelector(".vidstream-player");
+  setPlayerCinema(shell, true, { silent: true });
   const player = frame.querySelector("#animePlayer");
   setupVideoSource(player, url).then(() => {
     player?.play?.().catch(() => {
@@ -3840,11 +3827,8 @@ function renderExternalPlaybackOption(show, externalUrl) {
 function renderEmbeddedAniPubPlayer(show, externalUrl) {
   const frame = document.querySelector("#videoFrame");
   const selected = state.activeEpisode;
-  const preferences = getLanguagePreferences();
   const episode = selected?.episode || {};
   const selectedSource = selected ? getSelectedEpisodeSource(episode) : null;
-  const audioTracks = getAvailableAudioTracks(episode);
-  const subtitleTracks = getAvailableSubtitles(episode);
   const label = selected
     ? `${selected.season?.title || `Season ${selected.seasonIndex + 1}`} Episode ${selected.episode?.episode || selected.episodeIndex + 1}`
     : show.title;
@@ -3864,35 +3848,14 @@ function renderEmbeddedAniPubPlayer(show, externalUrl) {
         ></iframe>
         ${renderVidstreamTopbar(label)}
       </div>
-      <div class="player-stream-toolbar iframe-prefs" aria-label="Episode playback settings">
-        <span class="source-badge">${escapeHtml(selectedSource?.label || "Embedded")}</span>
-        <select id="anipubAudioLang" class="language-select focusable">
-          ${audioTracks.map((track) => `<option value="${track}" ${track === preferences.audio ? "selected" : ""}>${languageOptionLabel(track, "audio")}</option>`).join("")}
-        </select>
-        <select id="anipubSubtitleLang" class="language-select focusable">
-          ${subtitleTracks.map((track) => `<option value="${track}" ${track === preferences.subtitles ? "selected" : ""}>${languageOptionLabel(track, "subtitles")}</option>`).join("")}
-        </select>
-      </div>
       ${renderPlayerEpisodeActions("")}
     </div>
   `;
 
-  const audioSelect = frame.querySelector("#anipubAudioLang");
-  const subSelect = frame.querySelector("#anipubSubtitleLang");
   const iframe = frame.querySelector("#anipubEmbeddedPlayer");
   const shell = frame.querySelector(".vidstream-player");
 
-  audioSelect?.addEventListener("change", () => {
-    setDefaultLanguage(audioSelect.value, subSelect?.value || "spanish");
-    applyAniPubPreferences(iframe, audioSelect.value, subSelect?.value || "spanish");
-    showToast(`Audio: ${audioSelect.value}`);
-  });
-
-  subSelect?.addEventListener("change", () => {
-    setDefaultLanguage(audioSelect?.value || "japanese", subSelect.value);
-    applyAniPubPreferences(iframe, audioSelect?.value || "japanese", subSelect.value);
-    showToast(`Subtitles: ${subSelect.value === "none" ? "off" : subSelect.value}`);
-  });
+  setPlayerCinema(shell, true, { silent: true });
   frame.querySelector("[data-player-fullscreen]")?.addEventListener("click", () => requestPlayerFullscreen(shell));
   frame.querySelector("[data-player-back]")?.addEventListener("click", () => showEpisodeListTab());
 

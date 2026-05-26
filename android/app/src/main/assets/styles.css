@@ -3124,7 +3124,6 @@ body.soft-focus .is-tv-focused {
   grid-template-columns: minmax(0, 1fr) minmax(12rem, 18rem);
   grid-template-areas:
     "stage sources"
-    "prefs sources"
     "actions sources";
   gap: 0.9rem;
   align-items: start;
@@ -3158,8 +3157,11 @@ body.soft-focus .is-tv-focused {
 }
 
 .player-stream-toolbar {
+  display: none;
+}
+
+.player-stream-toolbar {
   grid-area: prefs;
-  display: grid;
   grid-template-columns: auto minmax(10rem, 13rem) minmax(10rem, 13rem);
   align-items: center;
   gap: 0.68rem;
@@ -3426,7 +3428,6 @@ body.player-cinema-open {
   grid-template-columns: minmax(0, 1fr) minmax(14rem, 19rem);
   grid-template-areas:
     "stage sources"
-    "prefs sources"
     "actions sources";
   align-content: stretch;
   height: 100dvh;
@@ -3449,8 +3450,7 @@ body.player-cinema-open {
   max-height: calc(100dvh - 1.5rem);
 }
 
-.vidstream-player.is-cinema .player-episode-actions,
-.vidstream-player.is-cinema .player-stream-toolbar {
+.vidstream-player.is-cinema .player-episode-actions {
   max-width: none;
 }
 
@@ -4176,7 +4176,6 @@ body.player-cinema-open {
     grid-template-areas:
       "sources"
       "stage"
-      "prefs"
       "actions";
     padding: 0.58rem;
   }
@@ -4237,7 +4236,6 @@ body.player-cinema-open {
     grid-template-columns: 1fr;
     grid-template-areas:
       "stage"
-      "prefs"
       "sources"
       "actions";
     overflow: auto;

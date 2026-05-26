@@ -1,4 +1,4 @@
-const CACHE_NAME = "animetv-v147";
+const CACHE_NAME = "animetv-v148";
 const ASSETS = [
   "./",
   "./index.html",
