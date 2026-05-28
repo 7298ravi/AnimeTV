@@ -3570,6 +3570,7 @@ function renderVidstreamControls() {
         <button class="vid-tool-button focusable" type="button" data-player-panel="speed" aria-label="Playback speed">◴</button>
         <button class="vid-tool-button focusable" type="button" data-player-panel="subtitles" aria-label="Subtitles">▤</button>
         <button class="vid-tool-button focusable" type="button" data-player-cast aria-label="Cast">▱</button>
+        <button class="vid-tool-button focusable" type="button" data-player-fullscreen aria-label="Fullscreen (F)">⛶</button>
         <button class="vid-tool-button focusable" type="button" data-player-panel="more" aria-label="More options">⋮</button>
       </div>
       <div class="vid-panel" id="playerPanel" hidden></div>
@@ -3582,6 +3583,20 @@ function setPlayerCinema(container, enabled, options = {}) {
   container.classList.toggle("is-cinema", enabled);
   document.body.classList.toggle("player-cinema-open", enabled);
   if (!options.silent) showToast(enabled ? "Cinema mode" : "Normal player");
+}
+
+function toggleNativeFullscreen(container) {
+  const el = container || document.documentElement;
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  } else {
+    el.requestFullscreen().catch(() => {
+      // Fallback: try the document root
+      document.documentElement.requestFullscreen().catch(() =>
+        showToast("Fullscreen blocked by this browser.")
+      );
+    });
+  }
 }
 
 // Called when the ✕ button is clicked — exits cinema mode and shows the
@@ -3874,6 +3889,7 @@ function wireVidstreamControls(frame, video, episode, url, tracks = []) {
   frame.querySelector("[data-player-exit]")?.addEventListener("click", exitPlayerToSources);
   frame.querySelector("[data-player-back]")?.addEventListener("click", () => showEpisodeListTab());
   frame.querySelector("[data-player-cast]")?.addEventListener("click", () => castActiveEpisode());
+  frame.querySelector("[data-player-fullscreen]")?.addEventListener("click", () => toggleNativeFullscreen(shell));
   frame.querySelectorAll("[data-player-panel]").forEach((button) => {
     button.addEventListener("click", () => openPlayerPanel(frame, button.dataset.playerPanel, video, episode, url, tracks));
   });
@@ -4963,6 +4979,14 @@ document.addEventListener("keydown", (event) => {
     if (!overlay.hidden) {
       event.preventDefault();
       closeShow();
+    }
+  }
+
+  if ((event.key === "f" || event.key === "F") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    const cinema = document.querySelector(".vidstream-player.is-cinema");
+    if (cinema && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
+      event.preventDefault();
+      toggleNativeFullscreen(cinema);
     }
   }
 });

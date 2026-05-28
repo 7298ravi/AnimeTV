@@ -4112,15 +4112,17 @@ body.player-cinema-open .close-button {
 
 /* ══════════════════════════════════════════════════════════════════════════
    Cinema mode — full-screen overlay
-   All UI chrome (topbar, controls) is absolutely positioned over the video.
-   No grid rows: video fills 100 % of the fixed overlay.
+   Layout: flex column so the stage grows to fill available height.
+   Chrome (topbar, controls, X button) overlays the stage with position:absolute.
    ══════════════════════════════════════════════════════════════════════════ */
 
 .vidstream-player.is-cinema {
   position: fixed;
   inset: 0;
   z-index: 10050;
-  display: block;          /* children use position:absolute — no grid */
+  display: flex;            /* ← flex column: stage gets all remaining height */
+  flex-direction: column;
+  width: 100%;
   height: 100dvh;
   padding: 0;
   border: 0;
@@ -4130,49 +4132,57 @@ body.player-cinema-open .close-button {
   transition: none;
 }
 
-/* Stage fills the entire cinema overlay */
+/* Stage: flex child that fills all space inside the cinema overlay.
+   position:relative makes it the containing block for the absolutely-
+   positioned video, topbar, and controls inside it. */
 .vidstream-player.is-cinema .vid-player-stage {
-  position: absolute;
-  inset: 0;
-  display: block;          /* video positioned absolutely — no flex */
-  min-height: 0;
-  height: 100%;
+  position: relative;      /* ← containing block for absolute children */
+  flex: 1 1 0;             /* ← grow/shrink to fill the cinema overlay */
+  min-height: 0;           /* ← allow flex to shrink below content size */
+  display: block;
+  width: 100%;
   overflow: hidden;
+  border-radius: 0;
 }
 
-/* Video fills the stage */
+/* Video stretches to fill the entire stage */
 .vidstream-player.is-cinema .vid-player-stage > video {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  max-height: none;        /* cancel .video-frame video's 34rem cap */
+  max-width: none;
+  min-height: 0;           /* cancel inherited min-height from normal mode */
   object-fit: contain;
-  flex: none;              /* reset any inherited flex shorthand */
+  border-radius: 0;
+  background: #000;
+  z-index: 1;
+  flex: none;
 }
 
-/* ── Topbar: gradient overlay at the top of the cinema ── */
+/* ── Topbar: gradient bar pinned to the top of the stage ── */
 .vidstream-player.is-cinema .vid-topbar {
   position: absolute;
-  inset: 0 0 auto;         /* top:0  left:0  right:0 */
+  inset: 0 0 auto;         /* top:0  left:0  right:0  bottom:auto */
   z-index: 10;
-  order: 0;                /* not in flex anymore — reset order */
   display: flex;
   align-items: center;
   gap: 0.6rem;
   min-height: 3.5rem;
-  /* Right padding reserves space for the X button (absolute, ~3.4rem) */
+  /* right padding leaves room for the ✕ button (~3.4 rem wide) */
   padding: 0.8rem 4rem 3.5rem 1rem;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.88) 0%, transparent 100%);
   border-bottom: 0;
-  pointer-events: none;    /* pass clicks through to video */
+  pointer-events: none;    /* click-through to video */
 }
 
-/* All interactive items inside the topbar are clickable */
+/* Re-enable pointer events for interactive controls inside the topbar */
 .vidstream-player.is-cinema .vid-topbar > * {
   pointer-events: auto;
 }
 
-/* Episode title: takes all remaining flex space */
+/* Episode title: grows to fill the topbar, clips overflow */
 .vidstream-player.is-cinema .vid-topbar strong {
   flex: 1;
   min-width: 0;
@@ -4187,18 +4197,16 @@ body.player-cinema-open .close-button {
   color: rgba(255, 255, 255, 0.95);
 }
 
-/* Show Prev / Next nav buttons in cinema topbar */
+/* Show Prev / Next nav buttons only in cinema (hidden by default) */
 .vidstream-player.is-cinema .vid-topbar-nav {
   display: inline-grid;
   flex-shrink: 0;
 }
 
-/* ── X (close) button: pinned to the top-right corner ── */
+/* ── ✕ button: pinned to the very top-right of the stage ── */
 .vidstream-player.is-cinema .vid-exit-button {
   position: absolute;
-  top: 0.7rem;
-  right: 0.8rem;
-  inset: auto;              /* reset the normal-mode inset (none set, but safe) */
+  inset: auto;             /* clear any inherited inset */
   top: 0.7rem;
   right: 0.8rem;
   z-index: 12;
@@ -4216,7 +4224,7 @@ body.player-cinema-open .close-button {
   box-shadow: 0 0 0 0.18rem rgba(200, 35, 35, 0.25);
 }
 
-/* ── Media controls: gradient bar overlaying the bottom of the video ── */
+/* ── Controls bar: gradient bar pinned to the bottom of the stage ── */
 .vidstream-player.is-cinema .vid-controls {
   position: absolute;
   inset: auto 0 0;
@@ -4231,10 +4239,16 @@ body.player-cinema-open .close-button {
 }
 
 /* ── Episode actions bar: hidden in cinema ──
-   Navigation is covered by the topbar (⏮ Prev · title · Next ⏭)
-   and by ⏮⏭ buttons in the vid-controls bar. */
+   Navigation is in the topbar (⏮ ⏭) and vid-controls (⏮ ⏭). */
 .vidstream-player.is-cinema .player-episode-actions {
   display: none;
+}
+
+/* Fullscreen button active state — highlight while in native fullscreen */
+:fullscreen [data-player-fullscreen],
+:-webkit-full-screen [data-player-fullscreen] {
+  color: var(--cyan);
+  opacity: 1;
 }
 
 .player-controls-bar {
