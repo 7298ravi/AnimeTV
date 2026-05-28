@@ -4548,18 +4548,22 @@ body.player-cinema-open .close-button {
 }
 
 .custom-toast {
+  /* Center the toast in the viewport so it's always visible regardless of
+     what is open underneath (main page, watch overlay, cinema mode, etc.).
+     Previously bottom: 5rem landed inside the video player area visually. */
   position: fixed;
   left: 50%;
-  bottom: 5rem;
+  top: 50%;
+  bottom: auto;
   z-index: 10000;
   max-width: min(32rem, calc(100vw - 2rem));
   padding: 0.8rem 1.15rem;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   border: 0.08rem solid rgba(0, 210, 255, 0.24);
   border-radius: 999rem;
   color: #ffffff;
-  background: rgba(8, 10, 19, 0.88);
-  box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.34);
+  background: rgba(8, 10, 19, 0.92);
+  box-shadow: 0 1rem 2.4rem rgba(0, 0, 0, 0.48);
   font-weight: 900;
   text-align: center;
   backdrop-filter: blur(1rem);
@@ -4623,11 +4627,12 @@ body.player-cinema-open .close-button {
 @keyframes slide-up {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(1rem);
+    /* start slightly below center and rise into position */
+    transform: translate(-50%, calc(-50% + 1.2rem));
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translate(-50%, -50%);
   }
 }
 

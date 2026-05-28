@@ -7,10 +7,11 @@ function readUiPreferences() {
       motion: true,
       focusGlow: true,
       autoplayHero: true,
+      defaultVolume: 0.1,
       ...JSON.parse(localStorage.getItem(APP_UI_PREFS_KEY) || "{}")
     };
   } catch (error) {
-    return { motion: true, focusGlow: true, autoplayHero: true };
+    return { motion: true, focusGlow: true, autoplayHero: true, defaultVolume: 0.1 };
   }
 }
 
