@@ -60,7 +60,34 @@ function normalizeSeasons(item) {
       .filter((season) => season.episodes.length);
   }
 
-  return groupEpisodesBySeason(normalizeEpisodes(item));
+  const normalized = normalizeEpisodes(item);
+  if (normalized.length) return groupEpisodesBySeason(normalized);
+
+  // No episodes array — generate numbered placeholders from the episode count so
+  // scraped/metadata-only catalog items (e.g. scrapled-catalog) have selectable
+  // episode buttons even before a playback source is resolved.
+  const totalEps = Math.min(
+    2000,
+    Math.max(0, Number(item.episode || item.episodeNumber || item.latestEpisode || item.total_episodes || item.episodeCount || 0))
+  );
+  if (totalEps > 0) {
+    return [{
+      season: 1,
+      title: "Season 1",
+      episodes: Array.from({ length: totalEps }, (_, i) => ({
+        id: `${item.id || item.title || "ep"}-s1-e${i + 1}`,
+        title: `Episode ${i + 1}`,
+        season: 1,
+        episode: i + 1,
+        number: i + 1,
+        videoUrl: "",
+        server: "Auto",
+        locked: true
+      }))
+    }];
+  }
+
+  return [];
 }
 
 function normalizeEpisodes(item, parentSeason = "") {

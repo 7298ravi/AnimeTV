@@ -13,7 +13,10 @@ const files = [
 ];
 
 const outDirs = ["dist", "public"];
-const sourceDir = existsSync("vercel-static") ? "vercel-static" : ".";
+// Always build from the project root so Vercel gets the latest code.
+// vercel-static/ is kept only as a reference snapshot and is NOT used as
+// the build source (it may be older than the working tree).
+const sourceDir = ".";
 
 function copyDir(source, target) {
   if (!existsSync(source)) return;

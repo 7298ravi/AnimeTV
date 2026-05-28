@@ -26,13 +26,13 @@
 ## Highlights
 
 - TV-first interface with compact sidebar navigation and remote-friendly focus states.
-- Multi-source catalogs: AniList/Jikan metadata, AniPub, Consumet KickAssAnime, JIMOV/TioAnime, Anime1v, RapidAPI, and custom addons.
-- Server picker per episode, with AniPub first when available and other playable sources added automatically.
+- Multi-source catalogs: AniList/Jikan metadata, AniPub, AllAnime, JIMOV/TioAnime, and custom addons.
+- Cinema mode player with opaque episode header, prev/next navigation, and seek controls.
 - Embedded iframe playback and direct `<video>` playback stay separated for safety.
 - Japanese audio and Spanish subtitles are the default playback preference.
 - English subtitle tracks can be translated into Spanish for direct subtitle files.
 - Favorites, watch history, resume positions, settings, light/dark theme, daily refresh, and Android TV wrapper.
-- Windows launcher can supervise AnimeTV, Anime1v, and a local Consumet Docker container, restarting services after crashes.
+- Windows launcher can supervise AnimeTV and local companion services, restarting after crashes.
 
 ## Live Deployment
 
@@ -48,7 +48,7 @@ The app is also runnable locally at:
 http://127.0.0.1:4173
 ```
 
-## Quick Start
+## Quick Start (local)
 
 ```powershell
 npm start
@@ -67,6 +67,70 @@ Useful options:
 .\start-all.bat -Anime1vPath "C:\anime1v-api"
 ```
 
+## Deploy to Vercel
+
+### 1. Import the repo
+
+Go to [vercel.com/new](https://vercel.com/new), import this GitHub repository.
+
+Vercel will auto-detect the settings from `vercel.json`:
+
+| Setting | Value |
+|---|---|
+| Build Command | `npm run vercel-build` |
+| Output Directory | `dist` |
+| Install Command | *(leave blank — no npm dependencies)* |
+
+### 2. Environment variables (Vercel dashboard → Settings → Environment Variables)
+
+Only these are required for the default online experience:
+
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `JIMOV_API` | No | `https://jimov-api.vercel.app` | Override if you self-host JIMOV |
+
+Everything else is optional. AllAnime and AniPub work with no keys.
+
+Optional integrations:
+
+| Variable | Notes |
+|---|---|
+| `CONSUMET_API` | Public HTTPS Consumet instance (e.g. deployed on Railway). Skip for Vercel — `localhost:3000` won't work. |
+| `RAPIDAPI_ANIME_HOST` | Your RapidAPI host for the anime streaming API. |
+| `RAPIDAPI_ANIME_KEY` | Your RapidAPI key. Both must be set together. |
+| `ANIME1V_API` | Public HTTPS Anime1v-compatible API. Skip for Vercel — `localhost:3001` is local only. |
+| `LOG_LEVEL` | `debug` / `info` / `warn` / `error` / `silent`. Default: `info`. |
+| `UPDATE_REPO_URL` | GitHub repo URL for the in-app update checker. |
+
+### 3. Deploy
+
+```bash
+git push origin main   # Vercel auto-deploys on push
+```
+
+Or manually from the Vercel dashboard → **Redeploy**.
+
+### 4. Verify
+
+Open `https://your-deployment.vercel.app/api/health` — you should see `{"ok":true,"app":"AnimeTV","api":"ready",...}`.
+
+## Local development setup
+
+```powershell
+# 1. Clone
+git clone https://github.com/JSolanoDev/AnimeTV.git
+cd AnimeTV
+
+# 2. Copy env file
+cp .env.example .env.local
+
+# 3. Start the server
+npm start
+# → http://localhost:4173
+```
+
+No `npm install` is needed — this project has zero runtime npm dependencies.
+
 ## Build Android APK
 
 ```powershell
@@ -82,15 +146,15 @@ android\app\build\outputs\apk\debug\app-debug.apk
 
 ## Sources
 
-| Source | Type | Playback | Notes |
-| --- | --- | --- | --- |
-| AniList + Jikan | Metadata | No video | High quality titles, images, scores, descriptions, and schedules. |
-| AniPub | Online addon | Iframe | First fallback option when a matching episode exists. |
-| Consumet KickAssAnime | Self-hosted API | Direct HLS/M3U8 | Start with `docker run -p 3000:3000 riimuru/consumet-api`; AnimeTV uses JP audio and Spanish subtitle preference when returned. |
-| Anime1v | Local API | Direct or iframe | Japanese audio + Spanish subtitle friendly when quota/providers allow. |
-| JIMOV/TioAnime | Online addon | Direct or iframe | Spanish-friendly TioAnime connector. |
-| RapidAPI Anime Streaming | API addon | Direct HLS/M3U8 when available | Requires `RAPIDAPI_ANIME_HOST` and `RAPIDAPI_ANIME_KEY`. |
-| Custom sources | User configured | Direct or iframe | Add normalized JSON sources from the Sources screen. |
+| Source | Type | Playback | Needs key? |
+|---|---|---|---|
+| AniList + Jikan | Metadata only | — | No |
+| AniPub | Online addon | Iframe | No |
+| AllAnime | Online API | Direct / iframe | No |
+| JIMOV / TioAnime | Online addon | Direct / iframe | No |
+| Consumet KickAssAnime | Self-hosted | HLS / M3U8 | No (self-host) |
+| RapidAPI Anime | API addon | HLS / M3U8 | Yes (paid) |
+| Custom sources | User configured | Direct / iframe | — |
 
 ## Playback Safety
 
@@ -103,21 +167,6 @@ Iframe embeds are handled separately:
 - Iframe embeds render inside the AnimeTV embedded iframe container.
 - Direct video and iframe playback paths stay separate.
 
-## Environment Variables
-
-Copy `.env.example` to `.env.local` for local development.
-
-```text
-PORT=4173
-ANIME1V_API=http://localhost:3001
-ANIME1V_AUTO_START=true
-CONSUMET_API=http://localhost:3000
-RAPIDAPI_ANIME_HOST=your-rapidapi-host.p.rapidapi.com
-RAPIDAPI_ANIME_KEY=your-rapidapi-key
-RAPIDAPI_ANIME_TIMEOUT_MS=28000
-UPDATE_REPO_URL=https://github.com/JSolanoDev/AnimeTV
-```
-
 ## API
 
 Core endpoints:
@@ -127,14 +176,10 @@ GET /api/health
 GET /api/catalog
 GET /api/anipub/catalog/all?limit=12000
 GET /api/anipub/episodes/:id
-GET /api/anime1v/health
-GET /api/anime1v/trending
-GET /api/anime1v/search?q=naruto
-GET /api/consumet/kickassanime/health
-GET /api/consumet/kickassanime/catalog
-GET /api/consumet/kickassanime/info?id=naruto-f3cf
-GET /api/consumet/kickassanime/watch?episodeId=naruto-f3cf/episode/ep-1-12cd96
+GET /api/allanime/search?q=naruto&limit=8
+GET /api/allanime/watch?id=SHOW_ID&ep=1&lang=sub
 GET /api/jimov/tioanime/catalog
+GET /api/jimov/tioanime/health
 GET /api/rapid-anime/health
 GET /api/rapid-anime/catalog
 GET /api/refresh-daily?background=1
@@ -142,27 +187,31 @@ GET /api/refresh-daily?background=1
 
 More details are in [docs/API.md](docs/API.md).
 
+## Development commands
+
+```powershell
+npm run check          # syntax check + security audit
+npm run vercel-build   # build dist/ and public/ from root sources
+npm run android:build  # build Android APK
+```
+
 ## Project Structure
 
 ```text
 AnimeTV/
-├── animetv-local.js      # Local server entrypoint
-├── animetv-server.js     # Shared API/server handler
-├── client.js             # Frontend app
-├── styles.css            # TV UI styling
+├── animetv-local.js      # Local server entrypoint (npm start)
+├── animetv-server.js     # Shared API/server handler (used by local + Vercel)
+├── client.js             # Frontend application
+├── styles.css            # TV-first UI styles
+├── index.html            # App shell
 ├── sources.json          # Default source configuration
-├── api/[...path].js      # Vercel API bridge
+├── api/[...path].js      # Vercel serverless API bridge
+├── scripts/
+│   ├── build-static.mjs  # Copies static assets → dist/ and public/
+│   └── security-audit.mjs
+├── js/                   # Frontend constants, utils, normalizer, translations
 ├── android/              # Android TV wrapper
-├── docs/                 # Documentation and branding assets
-└── scripts/              # Build helpers
-```
-
-## Development
-
-```powershell
-npm run check
-npm run vercel-build
-npm run android:build
+└── docs/                 # API docs, branding, troubleshooting
 ```
 
 ## Maintainer

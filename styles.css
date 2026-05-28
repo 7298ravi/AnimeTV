@@ -1891,9 +1891,9 @@ body:not([data-route="home"]) .section-heading h2 {
 }
 
 .settings-grid:has(.settings-rail) {
-  grid-template-columns: minmax(10rem, 14rem) minmax(0, 48rem);
+  grid-template-columns: minmax(10rem, 14rem) minmax(0, 54rem);
   align-items: start;
-  max-width: 80rem;
+  max-width: 86rem;
   min-height: min(42rem, 74vh);
   padding: 0;
   overflow: hidden;
@@ -1919,6 +1919,9 @@ body:not([data-route="home"]) .section-heading h2 {
 }
 
 .settings-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   min-height: 3.3rem;
   padding: 0 1rem;
   border: 0.08rem solid transparent;
@@ -1929,6 +1932,7 @@ body:not([data-route="home"]) .section-heading h2 {
   font-weight: 900;
   text-align: left;
   cursor: pointer;
+  transition: color 150ms, background 150ms, border-color 150ms;
 }
 
 .settings-rail-item:is(:hover, :focus-visible, .is-tv-focused, .is-selected) {
@@ -1941,6 +1945,9 @@ body:not([data-route="home"]) .section-heading h2 {
 
 .settings-rail-item.is-selected {
   border-color: rgba(255, 255, 255, 0.52);
+  background:
+    linear-gradient(135deg, rgba(34, 215, 255, 0.14), rgba(138, 92, 255, 0.18)),
+    rgba(255, 255, 255, 0.09);
 }
 
 .settings-version {
@@ -1955,8 +1962,10 @@ body:not([data-route="home"]) .section-heading h2 {
 
 .settings-console {
   display: grid;
-  gap: 1.2rem;
-  max-height: min(74vh, 48rem);
+  align-content: start;
+  gap: 1rem;
+  height: min(74vh, 48rem);
+  max-height: none;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -1967,13 +1976,18 @@ body:not([data-route="home"]) .section-heading h2 {
 .settings-panel {
   display: grid;
   gap: 0.65rem;
+  min-height: min(64vh, 40rem);
+  align-content: start;
   padding: 0.95rem 0 1.35rem;
-  border-bottom: 0.08rem solid rgba(255, 255, 255, 0.07);
   scroll-margin-top: 1rem;
 }
 
-.settings-panel:last-child {
-  border-bottom: 0;
+.settings-panel[hidden] {
+  display: none;
+}
+
+.settings-panel.is-active {
+  animation: settingsPanelIn 180ms ease both;
 }
 
 .settings-panel-head {
@@ -1981,7 +1995,9 @@ body:not([data-route="home"]) .section-heading h2 {
   grid-template-columns: 2.3rem minmax(0, 1fr);
   align-items: center;
   gap: 0.8rem;
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 0.08rem solid rgba(255, 255, 255, 0.07);
 }
 
 .settings-panel-head h3 {
@@ -1996,6 +2012,17 @@ body:not([data-route="home"]) .section-heading h2 {
   color: rgba(246, 243, 255, 0.52);
   font-size: 0.84rem;
   font-weight: 750;
+}
+
+@keyframes settingsPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(0.35rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .settings-line {
@@ -2088,6 +2115,220 @@ body:not([data-route="home"]) .section-heading h2 {
   font: inherit;
   font-size: 0.78rem;
   font-weight: 950;
+}
+
+/* ── Settings Rail Icon ──────────────────────────────────────────────── */
+.rail-icon {
+  display: inline-block;
+  width: 1.4em;
+  opacity: 0.7;
+}
+
+.settings-rail-item.is-selected .rail-icon {
+  opacity: 1;
+}
+
+/* ── Settings Group Label & Divider ──────────────────────────────────── */
+.settings-group-label {
+  margin: 0.65rem 0 0.1rem;
+  color: rgba(0, 210, 255, 0.72);
+  font-size: 0.7rem;
+  font-weight: 950;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.settings-divider {
+  height: 0.08rem;
+  margin: 0.5rem 0 0.2rem;
+  border: none;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.settings-line > span small {
+  display: block;
+  margin-top: 0.18rem;
+  color: rgba(246, 243, 255, 0.42);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+/* ── Volume Slider ────────────────────────────────────────────────────── */
+.settings-volume-line.settings-line {
+  display: grid;
+  gap: 0.55rem;
+  min-height: unset;
+  padding: 0.6rem 0;
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+.settings-volume-label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.settings-volume-label > span {
+  color: rgba(246, 243, 255, 0.78);
+  font-weight: 850;
+}
+
+.settings-volume-value {
+  margin-left: auto;
+  color: rgba(0, 210, 255, 0.9);
+  font-size: 0.82rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  transition: color 120ms;
+}
+
+.settings-volume-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.settings-volume-icon {
+  font-size: 1rem;
+  opacity: 0.65;
+  flex-shrink: 0;
+}
+
+.settings-volume-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 0.38rem;
+  border-radius: 999rem;
+  outline: none;
+  cursor: pointer;
+  background: linear-gradient(
+    to right,
+    var(--cyan) 0%,
+    var(--cyan) var(--vol-pct, 10%),
+    rgba(255, 255, 255, 0.12) var(--vol-pct, 10%),
+    rgba(255, 255, 255, 0.12) 100%
+  );
+  transition: opacity 160ms;
+}
+
+.settings-volume-slider:focus-visible {
+  box-shadow: 0 0 0 0.15rem rgba(0, 210, 255, 0.5);
+}
+
+.settings-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0.1rem 0.6rem rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  transition: transform 160ms, background 160ms;
+}
+
+.settings-volume-slider::-moz-range-thumb {
+  width: 1.15rem;
+  height: 1.15rem;
+  border: none;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0.1rem 0.6rem rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+.settings-volume-slider:hover::-webkit-slider-thumb,
+.settings-volume-slider:focus::-webkit-slider-thumb {
+  background: var(--cyan);
+  transform: scale(1.2);
+}
+
+.settings-volume-slider:hover::-moz-range-thumb,
+.settings-volume-slider:focus::-moz-range-thumb {
+  background: var(--cyan);
+  transform: scale(1.2);
+}
+
+/* ── Settings Sources Tab ─────────────────────────────────────────────── */
+.settings-source-summary {
+  margin: 0 0 0.4rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(246, 243, 255, 0.58);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.settings-sources-grid {
+  display: grid;
+  gap: 0.7rem;
+}
+
+/* ── Legal Tab ────────────────────────────────────────────────────────── */
+.settings-legal-tabs {
+  display: flex;
+  gap: 0.45rem;
+  padding: 0.3rem;
+  border: 0.08rem solid rgba(255, 255, 255, 0.08);
+  border-radius: 999rem;
+  background: rgba(2, 4, 12, 0.38);
+  width: fit-content;
+  margin-bottom: 0.6rem;
+}
+
+.settings-legal-content {
+  max-height: 28rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  padding-right: 0.5rem;
+}
+
+.settings-legal-section {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.settings-legal-section h4 {
+  margin: 0.6rem 0 0.1rem;
+  color: rgba(0, 210, 255, 0.85);
+  font-size: 0.78rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-legal-section h4:first-child {
+  margin-top: 0;
+}
+
+.settings-legal-section p {
+  margin: 0;
+  color: rgba(246, 243, 255, 0.64);
+  font-size: 0.84rem;
+  font-weight: 750;
+  line-height: 1.65;
+}
+
+.settings-legal-section ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: rgba(246, 243, 255, 0.6);
+  font-size: 0.84rem;
+  font-weight: 750;
+  line-height: 1.7;
+}
+
+.settings-legal-section a {
+  color: rgba(0, 210, 255, 0.9);
+  text-decoration: none;
+}
+
+.settings-legal-section a:hover {
+  text-decoration: underline;
 }
 
 body[data-theme="light"] .settings-grid {
@@ -2246,12 +2487,15 @@ body.soft-focus .is-tv-focused {
   position: fixed;
   inset: 0;
   z-index: 50;
-  display: grid;
-  place-items: center;
-  padding: 2rem;
+  /* always center the panel both axes */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(0.75rem, 2vw, 2rem);
   background: rgba(6, 5, 16, 0.82);
   backdrop-filter: blur(12px);
   animation: overlay-fade 200ms ease both;
+  overflow-y: auto;
 }
 
 .watch-overlay[hidden] {
@@ -2261,30 +2505,44 @@ body.soft-focus .is-tv-focused {
 .watch-panel {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(26rem, 0.8fr) minmax(28rem, 0.9fr);
-  gap: 1.5rem;
-  width: min(104rem, 96vw);
+  grid-template-columns: minmax(24rem, 0.8fr) minmax(26rem, 0.9fr);
+  align-items: stretch;
+  gap: 1.2rem;
+  width: min(102rem, 100%);
+  /* Explicit height so grid items can use min-height: 0 and scroll correctly */
+  height: min(calc(100dvh - clamp(1.5rem, 4vw, 4rem)), 54rem);
   padding: 1rem;
   border: 0.08rem solid var(--line);
   border-radius: 1.15rem;
   background: #101321;
   box-shadow: var(--shadow);
+  overflow: hidden;
   animation: modal-rise 260ms ease both;
+  margin: auto;
 }
 
 .close-button {
+  /* Anchored to the watch-overlay (position: fixed), not the panel */
   position: absolute;
-  right: 0.8rem;
-  top: 0.8rem;
-  z-index: 3;
-  width: 3rem;
-  height: 3rem;
+  right: clamp(0.5rem, 1.5vw, 1.2rem);
+  top: clamp(0.5rem, 1.5vw, 1.2rem);
+  z-index: 60;
+  flex-shrink: 0;
+  width: 2.6rem;
+  height: 2.6rem;
   border-radius: 50%;
   color: #ffffff;
   background: rgba(255, 255, 255, 0.14);
-  font-size: 2rem;
+  font-size: 1.7rem;
   line-height: 1;
   cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 160ms;
+}
+
+.close-button:is(:hover, :focus-visible) {
+  background: rgba(220, 60, 60, 0.72);
+  outline: 0;
 }
 
 .video-frame {
@@ -2292,7 +2550,7 @@ body.soft-focus .is-tv-focused {
   display: grid;
   place-items: center;
   align-content: center;
-  min-height: 30rem;
+  min-height: 0;
   padding: 2rem;
   border-radius: 0.5rem;
   overflow: hidden;
@@ -2328,11 +2586,88 @@ body.soft-focus .is-tv-focused {
 }
 
 .watch-art,
+.watch-ready-state,
+.source-picker,
 .video-frame p,
 .video-frame video {
   position: relative;
   z-index: 2;
 }
+
+/* Source picker fills the entire video-frame edge-to-edge */
+.video-frame:has(.source-picker) {
+  padding: 0;
+  align-content: stretch;
+  place-items: stretch;
+}
+
+.video-frame .source-picker {
+  height: 100%;
+}
+
+/* ── Rich "ready" state shown before an episode is selected ─────────────── */
+.watch-ready-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  padding: 1.5rem 1rem 0.5rem;
+}
+
+.watch-ready-poster-wrap {
+  width: min(14rem, 42%);
+  min-width: 9rem;
+  aspect-ratio: 2 / 3;
+  filter: drop-shadow(0 1.2rem 2.4rem rgba(0, 0, 0, 0.55));
+  animation: watchPosterIn 0.35s ease both;
+}
+
+@keyframes watchPosterIn {
+  from { opacity: 0; transform: translateY(0.6rem) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.watch-ready-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.32rem;
+  text-align: center;
+  animation: watchPosterIn 0.42s 0.1s ease both;
+}
+
+.watch-ready-source {
+  display: inline-block;
+  padding: 0.18rem 0.7rem;
+  border-radius: 2rem;
+  background: rgba(138, 92, 255, 0.22);
+  color: rgba(200, 180, 255, 0.9);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.watch-ready-hint {
+  color: rgba(246, 243, 255, 0.62);
+  font-size: 0.84rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.watch-ready-arrow {
+  font-size: 1.3rem;
+  color: rgba(138, 92, 255, 0.65);
+  animation: watchArrowBounce 1.6s ease-in-out infinite;
+  line-height: 1;
+}
+
+@keyframes watchArrowBounce {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(5px); }
+}
+/* ─────────────────────────────────────────────────────────────────────────── */
 
 .watch-art {
   display: grid;
@@ -2446,10 +2781,13 @@ body.soft-focus .is-tv-focused {
 }
 
 .watch-info {
-  max-height: calc(92vh - 2rem);
-  overflow: auto;
+  /* min-height: 0 lets the grid item shrink to the panel's height */
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   min-width: 0;
-  padding: 3.8rem 4.4rem 1rem 0;
+  padding: 1rem 1rem 1.5rem 0;
+  scrollbar-width: thin;
 }
 
 .watch-info h2 {
@@ -2919,6 +3257,7 @@ body.soft-focus .is-tv-focused {
 .player-server-options {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 0.55rem;
   width: 100%;
   padding: 0.15rem 0.05rem;
@@ -2927,9 +3266,11 @@ body.soft-focus .is-tv-focused {
 .player-source-heading {
   flex: 1 0 100%;
   display: grid;
+  justify-items: center;
   gap: 0.08rem;
   margin-bottom: 0.18rem;
   color: #ffffff;
+  text-align: center;
 }
 
 .player-source-heading strong {
@@ -2951,6 +3292,7 @@ body.soft-focus .is-tv-focused {
     "number"
     "source";
   align-items: center;
+  justify-items: center;
   gap: 0.12rem;
   min-width: 7rem;
   min-height: 4rem;
@@ -2963,6 +3305,7 @@ body.soft-focus .is-tv-focused {
     rgba(40, 35, 72, 0.9);
   box-shadow: inset 0 0 0 0.04rem rgba(255, 255, 255, 0.03);
   cursor: pointer;
+  text-align: center;
   transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, box-shadow 180ms ease, color 180ms ease;
 }
 
@@ -2977,6 +3320,7 @@ body.soft-focus .is-tv-focused {
 
 .player-server-option strong {
   grid-area: number;
+  max-width: 100%;
   overflow: hidden;
   font-size: 0.94rem;
   line-height: 1.1;
@@ -3010,24 +3354,326 @@ body.soft-focus .is-tv-focused {
   color: rgba(255, 255, 255, 0.78);
 }
 
+/* ── Loading hint while addon sources are being fetched ─────────────────── */
+.addon-loading-hint {
+  padding: 1.2rem 1.5rem;
+  color: rgba(246, 243, 255, 0.42);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  animation: addonLoadingPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes addonLoadingPulse {
+  0%, 100% { opacity: 0.35; }
+  50%       { opacity: 0.8; }
+}
+
+/* Fade-in each addon band as it arrives */
+.addon-band {
+  animation: addonBandIn 0.38s ease both;
+}
+
+@keyframes addonBandIn {
+  from { opacity: 0; transform: translateY(0.5rem); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── Source picker (shown after ✕ exit button is clicked) ────────────────── */
+.source-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  min-height: 18rem;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+/* ── Poster hero strip ───────────────────────────────────────────────── */
+.source-picker-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-shrink: 0;
+  min-height: 10rem;
+  padding: 1.1rem 1.2rem 0.9rem;
+  background: linear-gradient(135deg, rgba(20, 10, 38, 0.85), rgba(10, 14, 28, 0.7));
+  overflow: hidden;
+}
+
+.source-picker-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--watch-bg, none) center / cover no-repeat;
+  opacity: 0.22;
+  filter: blur(18px) saturate(1.4);
+  transform: scale(1.08);
+  pointer-events: none;
+}
+
+.source-picker-art {
+  position: relative;
+  flex-shrink: 0;
+  width: 4.8rem;
+  height: 7rem;
+  border-radius: 0.6rem;
+  object-fit: cover;
+  box-shadow: 0 0.6rem 2rem rgba(0, 0, 0, 0.55);
+}
+
+.source-picker-art-placeholder {
+  background: linear-gradient(135deg, rgba(0, 210, 255, 0.18), rgba(138, 92, 255, 0.14));
+  border: 0.08rem solid rgba(255, 255, 255, 0.1);
+}
+
+.source-picker-hero-text {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.source-picker-show-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 1.05rem;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.source-picker-ep-label {
+  color: rgba(0, 210, 255, 0.85);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+/* ── Heading strip ───────────────────────────────────────────────────── */
+.source-picker-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  gap: 0.5rem;
+  padding: 0.7rem 1.2rem 0.5rem;
+  border-bottom: 0.08rem solid rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+
+.source-picker-heading strong {
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.source-picker-heading span {
+  font-size: 0.72rem;
+  color: rgba(246, 243, 255, 0.46);
+  font-weight: 800;
+}
+
+/* ── Options list ────────────────────────────────────────────────────── */
+.source-picker-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.75rem 1rem;
+  overflow-y: auto;
+  flex: 1;
+  align-content: flex-start;
+}
+
+/* Base option row — shared by all states */
+.source-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.72rem 0.95rem;
+  border-radius: 0.72rem;
+  border: 0.08rem solid rgba(255, 255, 255, 0.08);
+  color: rgba(246, 243, 255, 0.9);
+  background: rgba(255, 255, 255, 0.04);
+  font: inherit;
+  text-align: left;
+  transition: background 160ms, border-color 160ms, box-shadow 160ms, transform 120ms;
+}
+
+/* ── Found: fully playable server ───────────────────────────────────── */
+.source-picker-option-found {
+  border-color: rgba(0, 210, 255, 0.28);
+  background: linear-gradient(130deg, rgba(0, 210, 255, 0.08), rgba(138, 92, 255, 0.1));
+  cursor: pointer;
+}
+
+.source-picker-option-found:is(:hover, :focus-visible, .is-tv-focused) {
+  outline: 0;
+  background: linear-gradient(130deg, rgba(34, 215, 255, 0.88), rgba(138, 92, 255, 0.78));
+  border-color: transparent;
+  color: #06121d;
+  box-shadow: 0 0.4rem 1.2rem rgba(0, 0, 0, 0.3);
+  transform: translateY(-0.05rem);
+}
+
+.source-picker-option-found:is(:hover, :focus-visible, .is-tv-focused) small,
+.source-picker-option-found:is(:hover, :focus-visible, .is-tv-focused) .source-picker-slot-play-icon {
+  color: rgba(6, 18, 29, 0.65);
+}
+
+.source-picker-option-found:is(:hover, :focus-visible, .is-tv-focused) .source-picker-slot-play-badge {
+  background: rgba(6, 18, 29, 0.18);
+  color: #06121d;
+}
+
+/* ── Checking: lookup still in-flight ───────────────────────────────── */
+.source-picker-option-checking {
+  opacity: 0.62;
+  cursor: default;
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+/* ── Unavailable: lookup finished, nothing found ────────────────────── */
+.source-picker-option-unavail {
+  opacity: 0.32;
+  cursor: default;
+  border-color: rgba(255, 255, 255, 0.04);
+}
+
+/* ── Slot icon (left) ────────────────────────────────────────────────── */
+.source-picker-slot-icon {
+  flex-shrink: 0;
+  width: 1.6rem;
+  height: 1.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.source-picker-slot-play-icon {
+  color: rgba(0, 210, 255, 0.9);
+  background: rgba(0, 210, 255, 0.12);
+  font-size: 0.6rem;
+}
+
+.source-picker-slot-off-icon {
+  color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.85rem;
+}
+
+.source-picker-slot-checking-icon {
+  background: rgba(0, 210, 255, 0.07);
+}
+
+/* ── Slot body (center) ──────────────────────────────────────────────── */
+.source-picker-slot-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.source-picker-slot-body strong {
+  font-size: 0.88rem;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-picker-slot-body small {
+  color: rgba(246, 243, 255, 0.48);
+  font-size: 0.68rem;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Play badge (right, found only) ──────────────────────────────────── */
+.source-picker-slot-play-badge {
+  flex-shrink: 0;
+  padding: 0.22rem 0.6rem;
+  border-radius: 999rem;
+  background: rgba(0, 210, 255, 0.15);
+  color: rgba(0, 210, 255, 0.9);
+  font-size: 0.66rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ── Spinner ─────────────────────────────────────────────────────────── */
+.source-picker-spinner {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 0.12rem solid rgba(0, 210, 255, 0.3);
+  border-top-color: var(--cyan);
+  border-radius: 50%;
+  animation: spinnerRotate 700ms linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spinnerRotate {
+  to { transform: rotate(360deg); }
+}
+
+/* ✕ exit button — always visible, slightly larger than tool buttons */
+.vid-exit-button {
+  font-size: 1.05rem;
+  font-weight: 900;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: auto;
+}
+
+.vid-exit-button:is(:hover, :focus-visible, .is-tv-focused) {
+  background: rgba(220, 60, 60, 0.55);
+  color: #fff;
+}
+/* ─────────────────────────────────────────────────────────────────────────── */
+
 .player-episode-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
-  gap: 0.62rem;
+  gap: 0.55rem;
   width: 100%;
-  min-height: 3.7rem;
-  padding: 0.62rem;
-  border: 0.08rem solid rgba(255, 255, 255, 0.08);
-  border-radius: 0.78rem;
+  max-width: 44rem;
+  /* center the bar horizontally */
+  margin-inline: auto;
+  min-height: 3.2rem;
+  padding: 0.42rem 0.55rem;
+  border: 0.08rem solid rgba(255, 255, 255, 0.1);
+  border-radius: 999rem;
   background:
-    linear-gradient(135deg, rgba(38, 31, 74, 0.82), rgba(18, 22, 39, 0.72)),
-    rgba(20, 18, 42, 0.82);
-  box-shadow: inset 0 0 0 0.08rem rgba(255, 255, 255, 0.025);
+    linear-gradient(135deg, rgba(20, 16, 42, 0.94), rgba(10, 12, 24, 0.92));
+  box-shadow:
+    inset 0 0 0 0.08rem rgba(255, 255, 255, 0.06),
+    0 0.5rem 1.6rem rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
 }
 
-.player-episode-actions:has(.player-download-action:not(:disabled)) {
+.player-episode-actions:has(.player-download-action) {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  max-width: 52rem;
 }
 
 .player-language-bar {
@@ -3055,17 +3701,18 @@ body.soft-focus .is-tv-focused {
   justify-content: center;
   gap: 0.42rem;
   width: 100%;
-  min-height: 2.55rem;
-  padding: 0 0.82rem;
-  border: 0.08rem solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.62rem;
-  color: rgba(246, 243, 255, 0.9);
-  background: rgba(255, 255, 255, 0.08);
-  font-size: 0.86rem;
+  min-height: 2.45rem;
+  padding: 0 0.9rem;
+  border: 0.08rem solid transparent;
+  border-radius: 999rem;
+  color: rgba(246, 243, 255, 0.88);
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 0.84rem;
   font-weight: 900;
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
+  transition: background 150ms, color 150ms, box-shadow 150ms;
 }
 
 .player-nav-action span {
@@ -3097,6 +3744,7 @@ body.soft-focus .is-tv-focused {
 .player-nav-action:disabled {
   opacity: 0.42;
   cursor: not-allowed;
+  pointer-events: none;
   transform: none;
   box-shadow: none;
 }
@@ -3121,10 +3769,10 @@ body.soft-focus .is-tv-focused {
 
 .vidstream-player {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(12rem, 18rem);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
-    "stage sources"
-    "actions sources";
+    "stage"
+    "actions";
   gap: 0.9rem;
   align-items: start;
   padding: 0.8rem;
@@ -3136,20 +3784,6 @@ body.soft-focus .is-tv-focused {
   box-shadow:
     inset 0 0 0 0.08rem rgba(255, 255, 255, 0.035),
     0 1.1rem 2.4rem rgba(0, 0, 0, 0.24);
-}
-
-.vidstream-player .player-server-options {
-  grid-area: sources;
-  align-content: start;
-  flex-direction: column;
-  flex-wrap: nowrap;
-  max-height: min(52vh, 35rem);
-  overflow: auto;
-  padding: 0.25rem;
-}
-
-.vidstream-player .player-server-option {
-  width: 100%;
 }
 
 .vidstream-player .player-episode-actions {
@@ -3225,7 +3859,7 @@ body.soft-focus .is-tv-focused {
   inset: 0 0 auto;
   z-index: 5;
   display: grid;
-  grid-template-columns: 2.8rem minmax(0, 1fr) 2.8rem;
+  grid-template-columns: minmax(0, 1fr) 2.8rem;
   align-items: center;
   gap: 0.55rem;
   min-height: 3.7rem;
@@ -3235,11 +3869,25 @@ body.soft-focus .is-tv-focused {
   pointer-events: none;
 }
 
+/* In cinema / iframe mode the topbar becomes a solid bar via flexbox overrides above;
+   the strong inside should be centered with no left compensation */
+.vidstream-player.is-cinema .vid-topbar strong,
+.vidstream-player.is-iframe .vid-topbar strong {
+  padding-left: 0;
+  text-align: center;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.92);
+}
+
 .vid-topbar strong {
   min-width: 0;
   overflow: hidden;
   font-size: 0.98rem;
   font-weight: 850;
+  padding-left: 2.8rem;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3266,6 +3914,13 @@ body.soft-focus .is-tv-focused {
   color: #ffffff;
   background: rgba(138, 92, 255, 0.38);
   box-shadow: 0 0 0 0.14rem rgba(138, 92, 255, 0.12);
+}
+
+.vid-icon-button:disabled,
+.vid-tool-button:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .vid-loader {
@@ -3411,6 +4066,32 @@ body.soft-focus .is-tv-focused {
 
 .vidstream-player.is-iframe .vid-player-stage {
   min-height: clamp(23rem, 46vw, 36rem);
+  /* Black topbar + iframe stacked vertically */
+  display: flex;
+  flex-direction: column;
+}
+
+/* Opaque black info bar above the iframe */
+.vidstream-player.is-iframe .vid-topbar {
+  order: -1;
+  position: relative;
+  inset: auto;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.95);
+  border-bottom: 0.06rem solid rgba(255, 255, 255, 0.13);
+  min-height: 2.8rem;
+  padding: 0.4rem 3rem;
+  pointer-events: auto;
+}
+
+/* iframe fills remaining space after topbar */
+.vidstream-player.is-iframe .vid-player-stage > iframe {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
 }
 
 .vidstream-player.is-iframe .player-inline-prefs {
@@ -3421,37 +4102,82 @@ body.player-cinema-open {
   overflow: hidden;
 }
 
+/* Hide the overlay's outer × when cinema is active — the in-player vid-exit-button serves as close */
+body.player-cinema-open .close-button {
+  display: none;
+}
+
 .vidstream-player.is-cinema {
   position: fixed;
   inset: 0;
   z-index: 10050;
-  grid-template-columns: minmax(0, 1fr) minmax(14rem, 19rem);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   grid-template-areas:
-    "stage sources"
-    "actions sources";
-  align-content: stretch;
+    "stage"
+    "actions";
   height: 100dvh;
-  padding: 0.75rem;
+  padding: 0;
+  gap: 0;
   border: 0;
   border-radius: 0;
-  background:
-    radial-gradient(circle at 100% 0%, rgba(138, 92, 255, 0.16), transparent 24rem),
-    linear-gradient(135deg, #03050d, #070915);
+  background: #000;
   transition: none;
 }
 
-.vidstream-player.is-cinema .vid-player-stage,
-.vidstream-player.is-cinema .vid-player-stage video,
-.vidstream-player.is-cinema .vid-player-stage iframe {
-  min-height: calc(100dvh - 8.9rem);
+.vidstream-player.is-cinema .vid-player-stage {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  /* Flex column: topbar (black bar) sits above the video */
+  display: flex;
+  flex-direction: column;
 }
 
-.vidstream-player.is-cinema .player-server-options {
-  max-height: calc(100dvh - 1.5rem);
+/* Pull the topbar to the top of the flex stack via order;
+   it is rendered after <video> in the DOM but appears first visually */
+.vidstream-player.is-cinema .vid-topbar {
+  order: -1;
+  position: relative;
+  inset: auto;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.95);
+  border-bottom: 0.06rem solid rgba(255, 255, 255, 0.13);
+  min-height: 2.8rem;
+  padding: 0.4rem 3rem;
+  pointer-events: auto;
 }
 
+/* video grows to fill whatever remains after the topbar */
+.vidstream-player.is-cinema .vid-player-stage > video {
+  order: 0;
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+  width: 100%;
+  object-fit: contain;
+}
+
+/* Episode nav bar at the bottom of cinema — compact pill bar */
 .vidstream-player.is-cinema .player-episode-actions {
   max-width: none;
+  width: 100%;
+  margin-inline: 0;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-top: 0.08rem solid rgba(255, 255, 255, 0.08);
+  padding: 0.4rem 1rem;
+  min-height: 3.2rem;
+  background: rgba(5, 7, 15, 0.96);
+  backdrop-filter: blur(14px);
+  align-self: stretch;
 }
 
 .player-controls-bar {
@@ -4114,12 +4840,16 @@ body.player-cinema-open {
 
   .watch-panel {
     grid-template-columns: 1fr;
-    max-height: 92vh;
-    overflow: auto;
+    width: 100%;
+    height: auto;
+    max-height: calc(100dvh - 1.5rem);
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .watch-info {
-    padding: 0 4.1rem 0.5rem 0.5rem;
+    overflow-y: visible;
+    padding: 0.5rem 0.5rem 1rem 0.5rem;
   }
 
   .player-controls-bar {
@@ -4164,7 +4894,6 @@ body.player-cinema-open {
     max-width: none;
   }
 
-  .player-server-options,
   .player-episode-actions {
     overflow-x: auto;
     padding-bottom: 0.65rem;
@@ -4174,23 +4903,9 @@ body.player-cinema-open {
   .vidstream-player.is-iframe {
     grid-template-columns: 1fr;
     grid-template-areas:
-      "sources"
       "stage"
       "actions";
     padding: 0.58rem;
-  }
-
-  .vidstream-player .player-server-options {
-    flex-flow: row nowrap;
-    max-height: none;
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
-
-  .vidstream-player .player-source-heading {
-    flex: 0 0 9rem;
-    align-content: center;
-    margin: 0;
   }
 
   .vid-player-stage,
@@ -4234,18 +4949,23 @@ body.player-cinema-open {
 
   .vidstream-player.is-cinema {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
     grid-template-areas:
       "stage"
-      "sources"
       "actions";
-    overflow: auto;
-    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+    overflow: hidden;
+    padding-bottom: 0;
   }
 
-  .vidstream-player.is-cinema .vid-player-stage,
-  .vidstream-player.is-cinema .vid-player-stage video,
-  .vidstream-player.is-cinema .vid-player-stage iframe {
-    min-height: min(64dvh, 34rem);
+  .vidstream-player.is-cinema .vid-player-stage {
+    min-height: 0;
+    height: 100%;
+  }
+
+  .vidstream-player.is-cinema .vid-player-stage > video {
+    flex: 1 1 0;
+    min-height: 0;
+    height: auto;
   }
 
   .vid-controls {
@@ -4268,7 +4988,6 @@ body.player-cinema-open {
     justify-self: start;
   }
 
-  .player-server-option,
   .player-nav-action,
   .player-download-action,
   .player-cast-action {

@@ -130,6 +130,23 @@ let anipubHealthState = {
   error: "",
   total: null
 };
+
+// ── Pre-warm caches for online sources ──────────────────────────────────────
+let jimovCatalogCache = null;
+let jimovCatalogCacheAt = 0;
+let jimovCatalogPromise = null;
+const JIMOV_CATALOG_TTL_MS = 1000 * 60 * 30;
+
+let consumetCatalogCache = null;
+let consumetCatalogCacheAt = 0;
+let consumetCatalogPromise = null;
+const CONSUMET_CATALOG_TTL_MS = 1000 * 60 * 20;
+
+let rapidCatalogCache = null;
+let rapidCatalogCacheAt = 0;
+const RAPID_CATALOG_TTL_MS = 1000 * 60 * 20;
+// ─────────────────────────────────────────────────────────────────────────────
+
 let anime1vStartPromise = null;
 let dailyRefreshPromise = null;
 let lastDailyRefreshAt = 0;
@@ -275,6 +292,16 @@ function handleRequest(request, response) {
 
   if (url.pathname === "/api/jimov/tioanime/info" || url.pathname === "/api/jimov/tioanime/episodes") {
     handleJimovTioAnimeInfo(url, response);
+    return;
+  }
+
+  if (url.pathname === "/api/allanime/search") {
+    handleAllAnimeSearch(url, response);
+    return;
+  }
+
+  if (url.pathname === "/api/allanime/watch" || url.pathname === "/api/allanime/stream") {
+    handleAllAnimeWatch(url, response);
     return;
   }
 
@@ -434,6 +461,11 @@ function handleRequest(request, response) {
     return;
   }
 
+  if (url.pathname === "/api/scraped-catalog") {
+    handleScrapedCatalog(url, response);
+    return;
+  }
+
   const pathname = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
   const filePath = path.resolve(path.join(root, pathname));
 
@@ -497,6 +529,12 @@ function handleHealth(response) {
       anipubCatalogItems: anipubRawCatalogCache?.length || 0,
       anipubCatalogFresh: Boolean(anipubRawCatalogCacheAt && Date.now() - anipubRawCatalogCacheAt < ANIPUB_RAW_CATALOG_TTL_MS),
       anipubEpisodeEntries: anipubEpisodeCache.size,
+      jimovCatalogItems: jimovCatalogCache?.length || 0,
+      jimovCatalogFresh: Boolean(jimovCatalogCacheAt && Date.now() - jimovCatalogCacheAt < JIMOV_CATALOG_TTL_MS),
+      consumetCatalogItems: consumetCatalogCache?.length || 0,
+      consumetCatalogFresh: Boolean(consumetCatalogCacheAt && Date.now() - consumetCatalogCacheAt < CONSUMET_CATALOG_TTL_MS),
+      rapidCatalogItems: rapidCatalogCache?.length || 0,
+      rapidCatalogFresh: Boolean(rapidCatalogCacheAt && Date.now() - rapidCatalogCacheAt < RAPID_CATALOG_TTL_MS),
       translations: translationCache.size,
       persistentCacheDir: ".cache/server"
     },
@@ -568,6 +606,28 @@ function getClientIp(request) {
   return request.socket?.remoteAddress || "local";
 }
 
+async function prewarmAllSources() {
+  log("info", "Pre-warming all online source catalogs...");
+  const tasks = [
+    checkAniPubHealth().catch((err) => log("warn", `AniPub health prewarm: ${err.message}`)),
+    fetchAllAniPubCatalog(12000, await fetchAniPubTotalCount().catch(() => 8343))
+      .catch((err) => log("warn", `AniPub catalog prewarm: ${err.message}`)),
+    fetchCachedJimovCatalog(JIMOV_DEFAULT_CATALOG_LIMIT)
+      .catch((err) => log("warn", `JIMOV prewarm: ${err.message}`)),
+    fetchCachedConsumetCatalog(CONSUMET_CATALOG_LIMIT)
+      .catch((err) => log("warn", `Consumet prewarm: ${err.message}`)),
+    checkAnime1vHealth(ANIME1V_API_KEY, 7000)
+      .catch((err) => log("warn", `Anime1v prewarm: ${err.message}`))
+  ];
+  if (isRapidAnimeConfigured()) {
+    tasks.push(fetchCachedRapidCatalog(RAPIDAPI_ANIME_CATALOG_LIMIT)
+      .catch((err) => log("warn", `RapidAPI prewarm: ${err.message}`)));
+  }
+  const results = await Promise.allSettled(tasks);
+  const ok = results.filter((r) => r.status === "fulfilled").length;
+  log("info", `Source pre-warm complete: ${ok}/${results.length} tasks succeeded`);
+}
+
 function startLocalServer() {
   const server = http.createServer(handleRequest);
   server.listen(port, host, () => {
@@ -576,6 +636,9 @@ function startLocalServer() {
     console.log(`Metadata API ready at http://localhost:${port}/api/catalog`);
     ensureAnime1vServer();
     setInterval(ensureAnime1vServer, ANIME1V_RESTART_INTERVAL_MS);
+    // Pre-warm all online source catalogs immediately so the first browser
+    // request gets cached data instead of waiting for cold API fetches.
+    prewarmAllSources().catch((err) => log("warn", `Source pre-warm error: ${err.message}`));
     setTimeout(() => refreshDailyApis({ reason: "startup" }).catch((error) => {
       console.warn(`Daily API refresh failed on startup: ${error.message}`);
     }), DAILY_REFRESH_START_DELAY_MS);
@@ -629,10 +692,19 @@ async function refreshDailyApis({ force = false, reason = "scheduled" } = {}) {
   dailyRefreshPromise = (async () => {
     const startedAt = Date.now();
     console.log(`[AnimeTV] Daily API refresh started (${reason})`);
+    // Force-expire caches so each source re-fetches fresh data
+    jimovCatalogCacheAt = 0;
+    consumetCatalogCacheAt = 0;
+    rapidCatalogCacheAt = 0;
     const results = await Promise.allSettled([
-      checkAniPubHealth(),
-      fetchAllAniPubCatalog(12000, await fetchAniPubTotalCount().catch(() => 8343)),
-      checkAnime1vHealth(ANIME1V_API_KEY, 7000)
+      checkAniPubHealth(),                                                             // [0]
+      fetchAllAniPubCatalog(12000, await fetchAniPubTotalCount().catch(() => 8343)),  // [1]
+      checkAnime1vHealth(ANIME1V_API_KEY, 7000),                                      // [2]
+      fetchCachedJimovCatalog(JIMOV_DEFAULT_CATALOG_LIMIT),                           // [3]
+      fetchCachedConsumetCatalog(CONSUMET_CATALOG_LIMIT),                             // [4]
+      isRapidAnimeConfigured()                                                         // [5]
+        ? fetchCachedRapidCatalog(RAPIDAPI_ANIME_CATALOG_LIMIT)
+        : Promise.resolve([])
     ]);
     const payload = {
       status: results.every((result) => result.status === "fulfilled") ? "ok" : "degraded",
@@ -644,7 +716,16 @@ async function refreshDailyApis({ force = false, reason = "scheduled" } = {}) {
         : { ok: false, error: results[1].reason?.message || "AniPub refresh failed" },
       anime1v: results[2].status === "fulfilled"
         ? { ok: Boolean(results[2].value.ok), status: results[2].value.status || "" }
-        : { ok: false, error: results[2].reason?.message || "Anime1v health failed" }
+        : { ok: false, error: results[2].reason?.message || "Anime1v health failed" },
+      jimov: results[3].status === "fulfilled"
+        ? { ok: true, count: results[3].value.length }
+        : { ok: false, error: results[3].reason?.message || "JIMOV refresh failed" },
+      consumet: results[4].status === "fulfilled"
+        ? { ok: true, count: results[4].value.length }
+        : { ok: false, error: results[4].reason?.message || "Consumet refresh failed" },
+      rapidApi: results[5].status === "fulfilled"
+        ? { ok: true, count: results[5].value.length }
+        : { ok: false, error: results[5].reason?.message || "RapidAPI refresh failed" }
     };
     lastDailyRefreshAt = Date.now();
     lastDailyRefreshResult = payload;
@@ -788,50 +869,138 @@ async function handleTioAnimeCatalog(response) {
   }
 }
 
-async function handleJimovTioAnimeCatalog(reqUrl, response) {
-  const title = reqUrl.searchParams.get("q") || reqUrl.searchParams.get("title") || "";
-  const limit = Math.max(1, Math.min(JIMOV_MAX_CATALOG_LIMIT, Number(reqUrl.searchParams.get("limit") || JIMOV_DEFAULT_CATALOG_LIMIT)));
-  const status = reqUrl.searchParams.get("status") || "1";
-  const type = reqUrl.searchParams.get("type") || "0";
-  const sort = reqUrl.searchParams.get("sort") || "recent";
-  const genres = (reqUrl.searchParams.get("genres") || "accion,aventura,comedia,fantasia,romance,shounen")
-    .split(",")
-    .map((genre) => genre.trim())
-    .filter(Boolean);
+// ── Scrapled catalog (generated by scraper/anime_scraper.py) ─────────────────
+function handleScrapedCatalog(reqUrl, response) {
+  const catalogPath = path.join(root, "scraper", "anime_metadata.json");
 
-  try {
-    const requests = title
-      ? [buildJimovFilterUrl({ title, status, type, sort })]
-      : genres.map((genre) => buildJimovFilterUrl({ genre, status, type, sort }));
-    const settled = await Promise.allSettled(requests.map((url) =>
-      fetchWithTimeout(url, { headers: { Accept: "application/json" } }, 12000)
-        .then(async (upstream) => {
+  // Optional pagination: ?page=N&limit=M  (mirrors how other sources work)
+  const page  = Math.max(1, Number(reqUrl.searchParams.get("page")  || 1));
+  const limit = Math.max(1, Math.min(500, Number(reqUrl.searchParams.get("limit") || 200)));
+
+  fs.readFile(catalogPath, "utf8", (err, raw) => {
+    if (err) {
+      sendJson(response, {
+        ok: false,
+        error: "Scraped catalog not found. Run scraper/anime_scraper.py first.",
+        hint:  "cd scraper && pip install \"scrapling[all]\" && scrapling install && python anime_scraper.py"
+      }, 404);
+      return;
+    }
+
+    try {
+      const catalog = JSON.parse(raw);
+      const allItems = catalog.items || [];
+
+      // Paginate
+      const start  = (page - 1) * limit;
+      const slice  = allItems.slice(start, start + limit);
+      const hasMore = start + limit < allItems.length;
+
+      sendJson(response, {
+        ok:           true,
+        source:       catalog.source || "Scrapling Multi-Source",
+        scrapedAt:    catalog.scrapedAt || null,
+        page,
+        nextPage:     hasMore ? page + 1 : null,
+        hasMore,
+        totalResults: allItems.length,
+        items:        slice,
+      });
+    } catch (parseErr) {
+      sendJson(response, { ok: false, error: "Scraped catalog JSON is malformed. Re-run the scraper." }, 500);
+    }
+  });
+}
+
+// Shared JIMOV catalog fetch with in-memory cache for fast startup responses
+async function fetchCachedJimovCatalog(limit = JIMOV_DEFAULT_CATALOG_LIMIT) {
+  if (jimovCatalogCache && jimovCatalogCacheAt && Date.now() - jimovCatalogCacheAt < JIMOV_CATALOG_TTL_MS) {
+    return jimovCatalogCache.slice(0, limit);
+  }
+  if (jimovCatalogPromise) {
+    return (await jimovCatalogPromise).slice(0, limit);
+  }
+  jimovCatalogPromise = (async () => {
+    const genres = ["accion", "aventura", "comedia", "fantasia", "romance", "shounen"];
+    const settled = await Promise.allSettled(
+      genres.map((genre) =>
+        fetchWithTimeout(
+          buildJimovFilterUrl({ genre, status: "1", type: "0", sort: "recent" }),
+          { headers: { Accept: "application/json" } },
+          12000
+        ).then(async (upstream) => {
           if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`);
           return upstream.json();
         })
-    ));
-    const rawResults = settled.flatMap((result) => {
-      if (result.status !== "fulfilled") return [];
-      const payload = result.value;
-      return Array.isArray(payload) ? payload : payload.results || payload.items || payload.data || [];
-    });
+      )
+    );
     const seen = new Set();
-    const items = rawResults
+    const items = settled
+      .flatMap((result) => {
+        if (result.status !== "fulfilled") return [];
+        const payload = result.value;
+        return Array.isArray(payload) ? payload : payload.results || payload.items || payload.data || [];
+      })
       .filter((item) => {
         const key = normalizeTitle(item.name || item.title || item.url || "");
         if (!key || seen.has(key)) return false;
         seen.add(key);
         return true;
       })
-      .slice(0, limit)
       .map((item, index) => normalizeJimovCatalogItem(item, index))
       .filter(Boolean);
+    jimovCatalogCache = items;
+    jimovCatalogCacheAt = Date.now();
+    log("info", `JIMOV catalog cached: ${items.length} items`);
+    return items;
+  })().finally(() => { jimovCatalogPromise = null; });
+  return (await jimovCatalogPromise).slice(0, limit);
+}
+
+async function handleJimovTioAnimeCatalog(reqUrl, response) {
+  const title = reqUrl.searchParams.get("q") || reqUrl.searchParams.get("title") || "";
+  const limit = Math.max(1, Math.min(JIMOV_MAX_CATALOG_LIMIT, Number(reqUrl.searchParams.get("limit") || JIMOV_DEFAULT_CATALOG_LIMIT)));
+  const status = reqUrl.searchParams.get("status") || "1";
+  const type = reqUrl.searchParams.get("type") || "0";
+  const sort = reqUrl.searchParams.get("sort") || "recent";
+
+  try {
+    let items;
+    if (title) {
+      // Title search — bypass cache, hit the API directly
+      const settled = await Promise.allSettled([
+        fetchWithTimeout(buildJimovFilterUrl({ title, status, type, sort }), { headers: { Accept: "application/json" } }, 12000)
+          .then(async (upstream) => {
+            if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`);
+            return upstream.json();
+          })
+      ]);
+      const seen = new Set();
+      items = settled
+        .flatMap((result) => {
+          if (result.status !== "fulfilled") return [];
+          const payload = result.value;
+          return Array.isArray(payload) ? payload : payload.results || payload.items || payload.data || [];
+        })
+        .filter((item) => {
+          const key = normalizeTitle(item.name || item.title || item.url || "");
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .slice(0, limit)
+        .map((item, index) => normalizeJimovCatalogItem(item, index))
+        .filter(Boolean);
+    } else {
+      // Catalog mode — serve from pre-warmed in-memory cache
+      items = await fetchCachedJimovCatalog(limit);
+    }
 
     sendJson(response, {
       ok: true,
       source: "JIMOV TioAnime",
       count: items.length,
-      totalResults: seen.size,
+      totalResults: items.length,
       hasMore: false,
       items
     });
@@ -1026,6 +1195,129 @@ function repairServerEpisodes(episodes = [], seasonNumber = 1) {
     };
   });
 }
+
+// ── AllAnime (https://api.allanime.day) ────────────────────────────────────
+const ALLANIME_API = "https://api.allanime.day/api";
+const ALLANIME_REFERER = "https://allanime.day";
+const ALLANIME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+const ALLANIME_TIMEOUT_MS = 12000;
+const ALLANIME_SEARCH_QUERY = `query($search:SearchInput,$limit:Int,$translationType:VaildTranslationTypeEnumType,$countryOrigin:VaildCountryOriginEnumType){shows(search:$search,limit:$limit,translationType:$translationType,countryOrigin:$countryOrigin){edges{_id name altNames thumbnail availableEpisodesDetail}}}`;
+const ALLANIME_EPISODE_QUERY = `query($showId:String!,$translationType:VaildTranslationTypeEnumType!,$episodeString:String!){episode(showId:$showId,translationType:$translationType,episodeString:$episodeString){sourceUrls}}`;
+
+function decodeAllAnimeUrl(raw = "") {
+  if (!raw) return "";
+  // Common "HIDd" base64 prefix used by AllAnime
+  const encoded = raw.replace(/^--HIDd=/i, "");
+  if (encoded !== raw) {
+    try {
+      return Buffer.from(encoded, "base64").toString("utf-8");
+    } catch (error) {
+      return "";
+    }
+  }
+  return raw.startsWith("http") ? raw : "";
+}
+
+async function allAnimeGql(query, variables) {
+  const response = await fetchWithTimeout(ALLANIME_API, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Referer": ALLANIME_REFERER,
+      "User-Agent": ALLANIME_UA
+    },
+    body: JSON.stringify({ query, variables })
+  }, ALLANIME_TIMEOUT_MS);
+  if (!response.ok) throw new Error(`AllAnime API HTTP ${response.status}`);
+  const payload = await response.json();
+  if (payload.errors?.length) throw new Error(payload.errors[0].message);
+  return payload.data;
+}
+
+async function handleAllAnimeSearch(reqUrl, response) {
+  const q = (reqUrl.searchParams.get("q") || reqUrl.searchParams.get("query") || "").trim();
+  const limit = Math.max(1, Math.min(20, Number(reqUrl.searchParams.get("limit") || 8)));
+  if (!q) {
+    sendJson(response, { ok: false, error: "Missing search query" }, 400);
+    return;
+  }
+  try {
+    const data = await allAnimeGql(ALLANIME_SEARCH_QUERY, {
+      search: { query: q, allowAdult: false, allowUnknown: false },
+      limit,
+      translationType: "sub",
+      countryOrigin: "JP"
+    });
+    const edges = data?.shows?.edges || [];
+    const items = edges.map((show) => ({
+      id: `allanime-${show._id}`,
+      allAnimeId: show._id,
+      title: show.name || "",
+      aliases: Array.isArray(show.altNames) ? show.altNames : [],
+      image: show.thumbnail || "",
+      episode: "?",
+      genre: "anime",
+      genres: [],
+      source: "AllAnime",
+      description: "Multi-language anime from AllAnime — sub and dub available.",
+      availableEpisodes: show.availableEpisodesDetail || {},
+      colors: ["#00d2ff", "#251d47"],
+      day: "Local",
+      seasons: [],
+      episodes: []
+    })).filter((item) => item.title);
+    sendJson(response, { ok: true, source: "AllAnime", count: items.length, items });
+  } catch (error) {
+    sendJson(response, { ok: true, source: "AllAnime", count: 0, items: [], error: error.message }, 200);
+  }
+}
+
+async function handleAllAnimeWatch(reqUrl, response) {
+  const showId = (reqUrl.searchParams.get("id") || "").trim();
+  const ep = (reqUrl.searchParams.get("ep") || reqUrl.searchParams.get("episode") || "1").trim();
+  const lang = (reqUrl.searchParams.get("lang") || "sub").trim();
+  if (!showId) {
+    sendJson(response, { ok: false, error: "Missing show id" }, 400);
+    return;
+  }
+  const translationType = lang === "dub" ? "dub" : "sub";
+  try {
+    const data = await allAnimeGql(ALLANIME_EPISODE_QUERY, {
+      showId,
+      translationType,
+      episodeString: String(ep)
+    });
+    const rawSources = data?.episode?.sourceUrls || [];
+    const sources = rawSources
+      .map((item) => {
+        const decodedUrl = decodeAllAnimeUrl(String(item.sourceUrl || ""));
+        if (!decodedUrl) return null;
+        const isHls = /\.m3u8($|\?)/.test(decodedUrl);
+        const isMp4 = /\.mp4($|\?)/.test(decodedUrl);
+        const isDirect = isHls || isMp4;
+        return {
+          sourceName: item.sourceName || "AllAnime",
+          url: decodedUrl,
+          type: isDirect ? "direct" : "iframe",
+          priority: Number(item.priority || 0)
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.priority - a.priority);
+    sendJson(response, {
+      ok: true,
+      source: "AllAnime",
+      showId,
+      episode: ep,
+      lang: translationType,
+      count: sources.length,
+      sources
+    });
+  } catch (error) {
+    sendJson(response, { ok: true, source: "AllAnime", count: 0, sources: [], error: error.message }, 200);
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function ensureAnime1vServer() {
   if (anime1vStartPromise) return anime1vStartPromise;
@@ -1642,6 +1934,28 @@ async function handleConsumetHealth(response) {
   }
 }
 
+// Shared Consumet catalog fetch with in-memory cache for fast startup responses
+async function fetchCachedConsumetCatalog(limit = CONSUMET_CATALOG_LIMIT) {
+  if (consumetCatalogCache && consumetCatalogCacheAt && Date.now() - consumetCatalogCacheAt < CONSUMET_CATALOG_TTL_MS) {
+    return consumetCatalogCache.slice(0, limit);
+  }
+  if (consumetCatalogPromise) {
+    return (await consumetCatalogPromise).slice(0, limit);
+  }
+  consumetCatalogPromise = (async () => {
+    const items = await searchConsumetSeeds(CONSUMET_CATALOG_SEEDS, {
+      page: 1,
+      pages: CONSUMET_SEARCH_PAGES,
+      limit: CONSUMET_CATALOG_LIMIT
+    });
+    consumetCatalogCache = items;
+    consumetCatalogCacheAt = Date.now();
+    log("info", `Consumet catalog cached: ${items.length} items`);
+    return items;
+  })().finally(() => { consumetCatalogPromise = null; });
+  return (await consumetCatalogPromise).slice(0, limit);
+}
+
 async function handleConsumetCatalog(reqUrl, response) {
   if (HOSTED_RUNTIME && isLoopbackUrl(CONSUMET_API)) {
     sendJson(response, hostedLoopbackBlockedPayload("Consumet KickAssAnime", CONSUMET_API, "CONSUMET_API"), 503);
@@ -1649,10 +1963,17 @@ async function handleConsumetCatalog(reqUrl, response) {
   }
   const limit = Math.max(1, Math.min(CONSUMET_CATALOG_LIMIT, Number(reqUrl.searchParams.get("limit") || CONSUMET_CATALOG_LIMIT)));
   const page = Math.max(1, Number(reqUrl.searchParams.get("page") || 1) || 1);
-  const pages = Math.max(1, Math.min(CONSUMET_SEARCH_PAGES, Number(reqUrl.searchParams.get("pages") || CONSUMET_SEARCH_PAGES)));
   const query = reqUrl.searchParams.get("q") || reqUrl.searchParams.get("query");
   try {
-    const items = await searchConsumetSeeds(query ? [query] : CONSUMET_CATALOG_SEEDS, { page, pages, limit });
+    let items;
+    if (query) {
+      // Search — bypass cache, hit Consumet directly
+      const pages = Math.max(1, Math.min(CONSUMET_SEARCH_PAGES, Number(reqUrl.searchParams.get("pages") || 2)));
+      items = await searchConsumetSeeds([query], { page, pages, limit });
+    } else {
+      // Catalog — serve from pre-warmed cache
+      items = await fetchCachedConsumetCatalog(limit);
+    }
     sendJson(response, {
       ok: true,
       source: "Consumet KickAssAnime",
@@ -1982,6 +2303,22 @@ async function handleRapidAnimeHealth(response) {
   }
 }
 
+// Shared RapidAPI catalog fetch with in-memory cache for fast startup responses
+async function fetchCachedRapidCatalog(limit = RAPIDAPI_ANIME_CATALOG_LIMIT) {
+  if (rapidCatalogCache && rapidCatalogCacheAt && Date.now() - rapidCatalogCacheAt < RAPID_CATALOG_TTL_MS) {
+    return rapidCatalogCache.slice(0, limit);
+  }
+  const payload = await fetchRapidAnimeJson("/recent-episodes", { page: 1, limit: RAPIDAPI_ANIME_CATALOG_LIMIT });
+  const items = extractRapidAnimeItems(payload)
+    .map((item, index) => normalizeRapidAnimeShow(item, index))
+    .filter(Boolean)
+    .slice(0, RAPIDAPI_ANIME_CATALOG_LIMIT);
+  rapidCatalogCache = items;
+  rapidCatalogCacheAt = Date.now();
+  log("info", `RapidAPI catalog cached: ${items.length} items`);
+  return items.slice(0, limit);
+}
+
 async function handleRapidAnimeCatalog(reqUrl, response) {
   if (!isRapidAnimeConfigured()) {
     sendJson(response, rapidAnimeUnavailablePayload(), 503);
@@ -1991,28 +2328,37 @@ async function handleRapidAnimeCatalog(reqUrl, response) {
   const limit = Math.max(1, Math.min(RAPIDAPI_ANIME_CATALOG_LIMIT, Number(reqUrl.searchParams.get("limit") || RAPIDAPI_ANIME_CATALOG_LIMIT)));
   const page = Math.max(1, Number(reqUrl.searchParams.get("page") || 1));
   const mode = reqUrl.searchParams.get("mode") || "recent";
-  const endpoint = mode === "top-airing"
-    ? "/top-airing"
-    : mode === "spotlight"
-      ? "/spotlight"
-      : "/recent-episodes";
 
   try {
-    const payload = await fetchRapidAnimeJson(endpoint, { page, limit });
-    const rawItems = extractRapidAnimeItems(payload);
-    const items = rawItems
-      .map((item, index) => normalizeRapidAnimeShow(item, index))
-      .filter(Boolean)
-      .slice(0, limit);
+    let items, totalResults, nextPage;
+
+    // Page 1 of the default "recent" catalog is served from the pre-warmed cache
+    if (page === 1 && mode === "recent") {
+      items = await fetchCachedRapidCatalog(limit);
+      totalResults = items.length;
+      nextPage = null;
+    } else {
+      const endpoint = mode === "top-airing"
+        ? "/top-airing"
+        : mode === "spotlight"
+          ? "/spotlight"
+          : "/recent-episodes";
+      const payload = await fetchRapidAnimeJson(endpoint, { page, limit });
+      const rawItems = extractRapidAnimeItems(payload);
+      items = rawItems.map((item, index) => normalizeRapidAnimeShow(item, index)).filter(Boolean).slice(0, limit);
+      totalResults = Number(payload.total || payload.totalResults || payload.totalPages || payload.data?.total || 0) || items.length;
+      nextPage = inferRapidNextPage(payload, page, items.length);
+    }
+
     sendJson(response, {
       ok: true,
       source: "RapidAPI Anime Streaming",
       host: RAPIDAPI_ANIME_HOST,
       count: items.length,
-      totalResults: Number(payload.total || payload.totalResults || payload.totalPages || payload.data?.total || 0) || items.length,
-      page: Number(payload.page || payload.currentPage || payload.data?.page || page),
-      nextPage: inferRapidNextPage(payload, page, items.length),
-      hasMore: Boolean(inferRapidNextPage(payload, page, items.length)),
+      totalResults,
+      page,
+      nextPage,
+      hasMore: Boolean(nextPage),
       items
     });
   } catch (error) {

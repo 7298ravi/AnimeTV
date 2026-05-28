@@ -8,7 +8,7 @@
     <link rel="icon" type="image/svg+xml" href="icon.svg">
     <link rel="shortcut icon" href="icon.svg">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="stylesheet" href="styles.css?v=148">
+    <link rel="stylesheet" href="styles.css?v=154">
   </head>
   <body>
     <div class="app-loader" id="appLoader" role="status" aria-live="polite">
@@ -54,10 +54,6 @@
           <button class="nav-link focusable" data-route="favorites">
             <span aria-hidden="true">♥</span>
             Favorites
-          </button>
-          <button class="nav-link focusable" data-route="sources">
-            <span aria-hidden="true">◉</span>
-            Sources
           </button>
           <button class="nav-link focusable" data-route="settings">
             <span aria-hidden="true">⚙</span>
@@ -223,8 +219,8 @@
     </div>
 
     <div class="watch-overlay" id="watchOverlay" hidden>
+      <button class="close-button focusable" id="closeOverlay" aria-label="Close">×</button>
       <div class="watch-panel" role="dialog" aria-modal="true" aria-labelledby="watchTitle">
-        <button class="close-button focusable" id="closeOverlay" aria-label="Close">×</button>
         <div class="video-frame" id="videoFrame">
           <div class="watch-art" id="watchArt">
             <div class="watch-poster-placeholder">
@@ -247,11 +243,11 @@
       </div>
     </div>
 
-    <script src="js/constants.js?v=148"></script>
-    <script src="js/translations.js?v=148"></script>
-    <script src="js/utils.js?v=148"></script>
-    <script src="js/normalize.js?v=148"></script>
-    <script src="update-manager.js?v=148"></script>
-    <script src="client.js?v=148"></script>
+    <script src="js/constants.js?v=154"></script>
+    <script src="js/translations.js?v=154"></script>
+    <script src="js/utils.js?v=154"></script>
+    <script src="js/normalize.js?v=154"></script>
+    <script src="update-manager.js?v=154"></script>
+    <script src="client.js?v=154"></script>
   </body>
 </html>
