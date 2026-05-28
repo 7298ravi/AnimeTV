@@ -3648,6 +3648,11 @@ body.soft-focus .is-tv-focused {
   background: rgba(220, 60, 60, 0.55);
   color: #fff;
 }
+
+/* Topbar prev/next buttons: hidden in normal mode, shown in cinema mode */
+.vid-topbar-nav {
+  display: none;
+}
 /* ─────────────────────────────────────────────────────────────────────────── */
 
 .player-episode-actions {
@@ -3869,9 +3874,7 @@ body.soft-focus .is-tv-focused {
   pointer-events: none;
 }
 
-/* In cinema / iframe mode the topbar becomes a solid bar via flexbox overrides above;
-   the strong inside should be centered with no left compensation */
-.vidstream-player.is-cinema .vid-topbar strong,
+/* iframe mode: solid topbar — title centered, no left-padding compensation */
 .vidstream-player.is-iframe .vid-topbar strong {
   padding-left: 0;
   text-align: center;
@@ -4107,77 +4110,131 @@ body.player-cinema-open .close-button {
   display: none;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   Cinema mode — full-screen overlay
+   All UI chrome (topbar, controls) is absolutely positioned over the video.
+   No grid rows: video fills 100 % of the fixed overlay.
+   ══════════════════════════════════════════════════════════════════════════ */
+
 .vidstream-player.is-cinema {
   position: fixed;
   inset: 0;
   z-index: 10050;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "stage"
-    "actions";
+  display: block;          /* children use position:absolute — no grid */
   height: 100dvh;
   padding: 0;
-  gap: 0;
   border: 0;
   border-radius: 0;
   background: #000;
+  overflow: hidden;
   transition: none;
 }
 
+/* Stage fills the entire cinema overlay */
 .vidstream-player.is-cinema .vid-player-stage {
-  position: relative;
+  position: absolute;
+  inset: 0;
+  display: block;          /* video positioned absolutely — no flex */
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  /* Flex column: topbar (black bar) sits above the video */
-  display: flex;
-  flex-direction: column;
 }
 
-/* Pull the topbar to the top of the flex stack via order;
-   it is rendered after <video> in the DOM but appears first visually */
+/* Video fills the stage */
+.vidstream-player.is-cinema .vid-player-stage > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  flex: none;              /* reset any inherited flex shorthand */
+}
+
+/* ── Topbar: gradient overlay at the top of the cinema ── */
 .vidstream-player.is-cinema .vid-topbar {
-  order: -1;
-  position: relative;
-  inset: auto;
-  flex: 0 0 auto;
+  position: absolute;
+  inset: 0 0 auto;         /* top:0  left:0  right:0 */
+  z-index: 10;
+  order: 0;                /* not in flex anymore — reset order */
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.95);
-  border-bottom: 0.06rem solid rgba(255, 255, 255, 0.13);
-  min-height: 2.8rem;
-  padding: 0.4rem 3rem;
+  gap: 0.6rem;
+  min-height: 3.5rem;
+  /* Right padding reserves space for the X button (absolute, ~3.4rem) */
+  padding: 0.8rem 4rem 3.5rem 1rem;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.88) 0%, transparent 100%);
+  border-bottom: 0;
+  pointer-events: none;    /* pass clicks through to video */
+}
+
+/* All interactive items inside the topbar are clickable */
+.vidstream-player.is-cinema .vid-topbar > * {
   pointer-events: auto;
 }
 
-/* video grows to fill whatever remains after the topbar */
-.vidstream-player.is-cinema .vid-player-stage > video {
-  order: 0;
-  flex: 1 1 0;
-  min-height: 0;
-  height: auto;
-  width: 100%;
-  object-fit: contain;
+/* Episode title: takes all remaining flex space */
+.vidstream-player.is-cinema .vid-topbar strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 0;
+  text-align: left;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.95);
 }
 
-/* Episode nav bar at the bottom of cinema — compact pill bar */
+/* Show Prev / Next nav buttons in cinema topbar */
+.vidstream-player.is-cinema .vid-topbar-nav {
+  display: inline-grid;
+  flex-shrink: 0;
+}
+
+/* ── X (close) button: pinned to the top-right corner ── */
+.vidstream-player.is-cinema .vid-exit-button {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.8rem;
+  inset: auto;              /* reset the normal-mode inset (none set, but safe) */
+  top: 0.7rem;
+  right: 0.8rem;
+  z-index: 12;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.55);
+  border: 0.08rem solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.vidstream-player.is-cinema .vid-exit-button:is(:hover, :focus-visible, .is-tv-focused) {
+  background: rgba(200, 35, 35, 0.75);
+  border-color: rgba(255, 80, 80, 0.4);
+  color: #fff;
+  box-shadow: 0 0 0 0.18rem rgba(200, 35, 35, 0.25);
+}
+
+/* ── Media controls: gradient bar overlaying the bottom of the video ── */
+.vidstream-player.is-cinema .vid-controls {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 10;
+  padding-bottom: max(0.72rem, env(safe-area-inset-bottom));
+  background: linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.9)  0%,
+    rgba(0, 0, 0, 0.55) 50%,
+    transparent         100%
+  );
+}
+
+/* ── Episode actions bar: hidden in cinema ──
+   Navigation is covered by the topbar (⏮ Prev · title · Next ⏭)
+   and by ⏮⏭ buttons in the vid-controls bar. */
 .vidstream-player.is-cinema .player-episode-actions {
-  max-width: none;
-  width: 100%;
-  margin-inline: 0;
-  border-radius: 0;
-  border-left: 0;
-  border-right: 0;
-  border-bottom: 0;
-  border-top: 0.08rem solid rgba(255, 255, 255, 0.08);
-  padding: 0.4rem 1rem;
-  min-height: 3.2rem;
-  background: rgba(5, 7, 15, 0.96);
-  backdrop-filter: blur(14px);
-  align-self: stretch;
+  display: none;
 }
 
 .player-controls-bar {
@@ -4947,26 +5004,7 @@ body.player-cinema-open .close-button {
     grid-template-columns: 1fr;
   }
 
-  .vidstream-player.is-cinema {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "stage"
-      "actions";
-    overflow: hidden;
-    padding-bottom: 0;
-  }
-
-  .vidstream-player.is-cinema .vid-player-stage {
-    min-height: 0;
-    height: 100%;
-  }
-
-  .vidstream-player.is-cinema .vid-player-stage > video {
-    flex: 1 1 0;
-    min-height: 0;
-    height: auto;
-  }
+  /* cinema mode is already fully absolute-positioned — no responsive overrides needed */
 
   .vid-controls {
     padding-bottom: max(0.72rem, env(safe-area-inset-bottom));

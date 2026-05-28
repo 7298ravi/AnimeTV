@@ -3539,10 +3539,18 @@ function formatPlayerTime(value = 0) {
 }
 
 function renderVidstreamTopbar(label = "") {
+  const nav = getEpisodeNavigationTargets();
   return `
     <div class="vid-topbar">
+      <button class="vid-icon-button vid-topbar-nav focusable" type="button"
+        data-player-prev ${nav.previous ? "" : "disabled"}
+        aria-label="Previous episode" title="Previous episode">⏮</button>
       <strong>${escapeHtml(label || currentEpisodeLabel())}</strong>
-      <button class="vid-icon-button vid-exit-button focusable" type="button" data-player-exit aria-label="Exit player and choose source">✕</button>
+      <button class="vid-icon-button vid-topbar-nav focusable" type="button"
+        data-player-next ${nav.next ? "" : "disabled"}
+        aria-label="Next episode" title="Next episode">⏭</button>
+      <button class="vid-icon-button vid-exit-button focusable" type="button"
+        data-player-exit aria-label="Close player">✕</button>
     </div>
   `;
 }
