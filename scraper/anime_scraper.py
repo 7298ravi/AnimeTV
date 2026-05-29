@@ -173,6 +173,43 @@ def get_json(url: str, params=None, delay: float = 0.0, label: str = ""):
         return None
 
 
+def _ajax_get_json(url: str, params=None, referer: str = "", label: str = ""):
+    """
+    GET JSON with XMLHttpRequest (AJAX) headers.
+
+    TioAnime /api/search and AnimeFLV /api/animes/search check for the
+    X-Requested-With header and return an empty body (200 but no content)
+    when a normal browser GET is made.  This wrapper adds the required
+    headers so the server returns proper JSON.
+    """
+    headers = {
+        "User-Agent":       next(_ua_cycle),
+        "Accept":           "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language":  "es-419,es;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding":  "gzip, deflate, br",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer":          referer or url,
+        "DNT":              "1",
+        "Connection":       "keep-alive",
+        "Cache-Control":    "no-cache",
+        "Pragma":           "no-cache",
+    }
+    try:
+        r = _session.get(url, params=params, headers=headers, timeout=HTTP_TIMEOUT)
+        if r.status_code == 200:
+            try:
+                return r.json()
+            except Exception as exc:
+                log.warning("[%s] AJAX JSON parse error: %s  (body: %r)",
+                            label or "ajax", exc, r.text[:120])
+                return None
+        log.warning("[%s] AJAX HTTP %d  %s", label or "ajax", r.status_code, url[:100])
+        return None
+    except Exception as exc:
+        log.warning("[%s] AJAX error  %s — %s", label or "ajax", url[:80], exc)
+        return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Shared utilities
 # ─────────────────────────────────────────────────────────────────────────────
@@ -589,6 +626,84 @@ def _dedup(items: list, key="_slug") -> list:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Title-matching helpers (used for slug search / cross-site episode fetching)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_RE_CJK = re.compile(r'[　-鿿豈-﫿︰-﹏一-鿿]')
+
+
+def _is_cjk_heavy(text: str) -> bool:
+    """Return True when text contains CJK (Japanese/Chinese) script characters."""
+    return bool(_RE_CJK.search(text or ""))
+
+
+def _search_titles(show: dict) -> list:
+    """
+    Return an ordered list of search-friendly titles for a show.
+
+    Priority order:
+    1. Pure ASCII alternative titles (typically English/Spanish)
+    2. Non-CJK alternative titles
+    3. The main title
+
+    When Jikan is the catalog source the main title is often Japanese-romanized
+    (e.g. "Tongari Boushi no Atelier") while the English alternative
+    (e.g. "Witch Hat Atelier") matches the site slug better.
+    """
+    main = show.get("title") or ""
+    alts = show.get("alternativeTitles") or []
+
+    result: list = []
+    seen: set = set()
+
+    def _add(t: str) -> None:
+        t = clean(t)
+        if t and t not in seen:
+            seen.add(t)
+            result.append(t)
+
+    # ASCII-only alts first (most likely to be Spanish/English display titles)
+    for alt in alts:
+        if re.match(r'^[\x00-\x7f]+$', alt or ""):
+            _add(alt)
+
+    # Non-CJK alts next
+    for alt in alts:
+        if not _is_cjk_heavy(alt):
+            _add(alt)
+
+    # Main title last
+    _add(main)
+
+    return result
+
+
+def _titles_match(a: str, b: str, threshold: float = 0.45) -> bool:
+    """
+    Fuzzy title comparison — True when the titles likely refer to the same anime.
+
+    Uses word-overlap ratio so minor punctuation/article differences are ignored.
+    threshold=0.45 means ~half the meaningful words must overlap.
+    """
+    def _norm(t: str) -> set:
+        return {w for w in re.split(r'[^a-z0-9]+', t.lower()) if len(w) >= 3}
+
+    if not a or not b:
+        return False
+    a_clean = re.sub(r'[^a-z0-9 ]', ' ', a.lower()).strip()
+    b_clean = re.sub(r'[^a-z0-9 ]', ' ', b.lower()).strip()
+    if a_clean == b_clean:
+        return True
+    if len(a_clean) > 5 and (a_clean in b_clean or b_clean in a_clean):
+        return True
+    wa, wb = _norm(a), _norm(b)
+    if not wa or not wb:
+        return False
+    overlap = len(wa & wb) / min(len(wa), len(wb))
+    return overlap >= threshold
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # TioAnime adapter
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -669,14 +784,17 @@ def fetch_catalog_tioanime(catalog_pages: int = 3) -> list:
         log.info("[TioAnime] /emision → +%d  (total %d)", n, len(results))
         html_found = html_found or bool(items)
 
-    # ── Strategy 3: search-API fallback ──
+    # ── Strategy 3: search-API fallback (uses XHR headers — required!) ──
     if not html_found or len(results) < 10:
-        log.info("[TioAnime] Falling back to search API")
+        log.info("[TioAnime] Falling back to AJAX search API")
         for term in BROAD_TERMS[:20]:
-            data = get_json(
-                f"{TIOANIME_BASE}/api/search", params={"q": term},
-                delay=SEARCH_DELAY, label="TioAnime",
+            data = _ajax_get_json(
+                f"{TIOANIME_BASE}/api/search",
+                params={"q": term},
+                referer=TIOANIME_BASE,
+                label="TioAnime",
             )
+            time.sleep(SEARCH_DELAY)
             if not data:
                 continue
             entries = (
@@ -694,6 +812,45 @@ def fetch_catalog_tioanime(catalog_pages: int = 3) -> list:
 
     log.info("[TioAnime] Catalog complete: %d unique anime", len(results))
     return results
+
+
+def _tioanime_find_slug_by_search(show: dict) -> str:
+    """
+    Search TioAnime by title to find the correct slug when the item's own
+    slug (often derived from a Japanese-romanized Jikan title) returns 404.
+
+    Uses the AJAX search endpoint with X-Requested-With headers which is
+    required for TioAnime to return JSON instead of an empty body.
+
+    Returns the best-matching slug string, or "" if nothing found.
+    """
+    queries = _search_titles(show)[:3]
+    main_title = show.get("title") or ""
+
+    for query in queries:
+        data = _ajax_get_json(
+            f"{TIOANIME_BASE}/api/search",
+            params={"q": query[:60]},
+            referer=TIOANIME_BASE,
+            label="TioAnime",
+        )
+        time.sleep(SEARCH_DELAY)
+        if not data:
+            continue
+        entries = (
+            data if isinstance(data, list)
+            else (data.get("animes") or data.get("data") or data.get("results") or [])
+        )
+        for entry in entries:
+            slug = (entry.get("slug") or entry.get("id") or "").strip()
+            if not slug:
+                continue
+            entry_title = clean(entry.get("title") or entry.get("name") or "")
+            if _titles_match(query, entry_title) or _titles_match(main_title, entry_title):
+                log.debug("[TioAnime] slug-search hit: '%s' → %s", query[:40], slug)
+                return slug
+
+    return ""
 
 
 def _tio_ep_nums_from_detail(slug: str) -> list:
@@ -717,12 +874,24 @@ def fetch_episodes_tioanime(show: dict, max_eps: int) -> list:
     if not slug:
         # Try to derive from siteUrl
         su = show.get("siteUrl", "")
-        slug = su.rstrip("/").rsplit("/", 1)[-1] if su else ""
+        slug = su.rstrip("/").rsplit("/", 1)[-1] if (su and "tioanime.com" in su) else ""
     if not slug:
         log.debug("[TioAnime] No slug for %s", show["title"])
         return []
 
     ep_nums = _tio_ep_nums_from_detail(slug)
+
+    # ── Slug mismatch? Try title-based search ──────────────────────────────
+    # Happens when the catalog came from Jikan: slugs are derived from
+    # Japanese-romanized titles but TioAnime uses English/Spanish slugs.
+    if not ep_nums:
+        found = _tioanime_find_slug_by_search(show)
+        if found and found != slug:
+            log.info("[TioAnime] Slug resolved via search: %r → %r  ('%s')",
+                     slug, found, show["title"][:40])
+            slug = found
+            ep_nums = _tio_ep_nums_from_detail(slug)
+
     if not ep_nums:
         log.debug("[TioAnime] No episodes found for %s (slug=%s)", show["title"], slug)
         return []
@@ -825,14 +994,17 @@ def fetch_catalog_animeflv(catalog_pages: int = 3) -> list:
         if html_found:
             break
 
-    # ── Strategy 2: search-API fallback ──
+    # ── Strategy 2: search-API fallback (uses XHR headers — required!) ──
     if not html_found or len(results) < 10:
-        log.info("[AnimeFLV] Falling back to search API")
+        log.info("[AnimeFLV] Falling back to AJAX search API")
         for term in BROAD_TERMS[:20]:
-            data = get_json(
-                f"{ANIMEFLV_BASE}/api/animes/search", params={"value": term},
-                delay=SEARCH_DELAY, label="AnimeFLV",
+            data = _ajax_get_json(
+                f"{ANIMEFLV_BASE}/api/animes/search",
+                params={"value": term},
+                referer=ANIMEFLV_BASE,
+                label="AnimeFLV",
             )
+            time.sleep(SEARCH_DELAY)
             if not data or not isinstance(data, list):
                 continue
             for entry in data:
@@ -846,6 +1018,40 @@ def fetch_catalog_animeflv(catalog_pages: int = 3) -> list:
 
     log.info("[AnimeFLV] Catalog complete: %d unique anime", len(results))
     return results
+
+
+def _animeflv_find_slug_by_search(show: dict) -> str:
+    """
+    Search AnimeFLV by title to find the correct slug when the item's own
+    slug doesn't match AnimeFLV's URL convention.
+
+    AnimeFLV /api/animes/search also requires X-Requested-With: XMLHttpRequest.
+
+    Returns the best-matching slug string, or "" if nothing found.
+    """
+    queries = _search_titles(show)[:3]
+    main_title = show.get("title") or ""
+
+    for query in queries:
+        data = _ajax_get_json(
+            f"{ANIMEFLV_BASE}/api/animes/search",
+            params={"value": query[:60]},
+            referer=ANIMEFLV_BASE,
+            label="AnimeFLV",
+        )
+        time.sleep(SEARCH_DELAY)
+        if not data or not isinstance(data, list):
+            continue
+        for entry in data:
+            slug = (entry.get("slug") or entry.get("id") or "").strip()
+            if not slug:
+                continue
+            entry_title = clean(entry.get("title") or entry.get("name") or "")
+            if _titles_match(query, entry_title) or _titles_match(main_title, entry_title):
+                log.debug("[AnimeFLV] slug-search hit: '%s' → %s", query[:40], slug)
+                return slug
+
+    return ""
 
 
 def _flv_ep_nums_from_detail(slug: str) -> list:
@@ -867,12 +1073,22 @@ def fetch_episodes_animeflv(show: dict, max_eps: int) -> list:
     slug = show.get("_slug", "")
     if not slug:
         su = show.get("siteUrl", "")
-        slug = su.rstrip("/").rsplit("/", 1)[-1] if su else ""
+        slug = su.rstrip("/").rsplit("/", 1)[-1] if (su and "animeflv" in su) else ""
     if not slug:
         log.debug("[AnimeFLV] No slug for %s", show["title"])
         return []
 
     ep_nums = _flv_ep_nums_from_detail(slug)
+
+    # ── Slug mismatch? Try title-based search ──────────────────────────────
+    if not ep_nums:
+        found = _animeflv_find_slug_by_search(show)
+        if found and found != slug:
+            log.info("[AnimeFLV] Slug resolved via search: %r → %r  ('%s')",
+                     slug, found, show["title"][:40])
+            slug = found
+            ep_nums = _flv_ep_nums_from_detail(slug)
+
     if not ep_nums:
         log.debug("[AnimeFLV] No episodes found for %s (slug=%s)", show["title"], slug)
         return []
