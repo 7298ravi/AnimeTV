@@ -1124,13 +1124,18 @@ function renderSchedule() {
     return [...seen.values()];
   })();
 
-  scheduleList.innerHTML = days.map((day) => {
+  // Highlight the current weekday. getDay() is 0=Sun..6=Sat; our columns run
+  // Mon..Sun, so shift by 6 to line up.
+  const todayIdx = (new Date().getDay() + 6) % 7;
+
+  scheduleList.innerHTML = days.map((day, idx) => {
+    const isToday = idx === todayIdx;
     const shows = airingShows
       .filter((show) => show.day?.toLowerCase().startsWith(day.toLowerCase()))
       .slice(0, 12);
     return `
-      <section class="schedule-day-column">
-        <h3>${fullDayName(day)}</h3>
+      <section class="schedule-day-column${isToday ? " is-today" : ""}"${isToday ? ' aria-current="date"' : ""}>
+        <h3>${fullDayName(day)}${isToday ? '<span class="schedule-today-badge">Today</span>' : ""}</h3>
         <div class="schedule-day-rail">
           ${shows.length ? shows.map((show) => `
             <button class="schedule-item focusable" data-open-show="${escapeHtml(show.id)}" data-open-season="${getCardTarget(show).seasonNumber}" data-open-episode="${getCardTarget(show).episodeNumber}">
@@ -5472,7 +5477,7 @@ function makePlaceholderEpisodes(show, seasonNumber) {
 }
 
 function getSeasonEpisodeLimit(show = {}, season = {}) {
-  const status = String(season.status || show.status || "").toUpperCase();
+  const status = String(season.status || season.anilistStatus || show.anilistStatus || show.status || "").toUpperCase();
   const format = String(season.format || show.format || "").toUpperCase();
   if (format === "MOVIE") return 1;
 
@@ -5504,6 +5509,14 @@ function getSeasonEpisodeLimit(show = {}, season = {}) {
   );
   const isAiring = status === "RELEASING" || status === "AIRING";
   const isFuture = status === "NOT_YET_RELEASED" || status === "UPCOMING";
+
+  // Authoritative override: if AniList still has a NEXT episode scheduled, the
+  // season is mid-air — cap at the last aired episode (= nextAiring - 1) no
+  // matter how the catalog spelled the status. This keeps "till today" correct
+  // for every airing anime, even when the status string isn't recognized.
+  if (Number.isFinite(nextAiring) && nextAiring > 1) {
+    return Number.isFinite(latestAired) && latestAired > 0 ? latestAired : nextAiring - 1;
+  }
 
   if (isFuture) return 0;
   if (isAiring) {

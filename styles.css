@@ -1614,6 +1614,45 @@ body:not([data-route="home"]) .section-heading h2 {
   text-align: center;
 }
 
+/* ── Today highlight ─────────────────────────────────────────────────────── */
+.schedule-day-column.is-today {
+  border-top-color: #5C9BFF;
+  background: linear-gradient(180deg, rgba(92, 155, 255, 0.22), transparent 18rem);
+  box-shadow: inset 0 0.18rem 0 0 #5C9BFF;
+  animation: scheduleTodayPulse 2.4s ease-in-out infinite;
+}
+
+.schedule-day-column.is-today h3 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  color: #ffffff;
+}
+
+.schedule-today-badge {
+  padding: 0.1rem 0.5rem;
+  border-radius: 999rem;
+  background: linear-gradient(135deg, #5C9BFF, #2563EB);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 0 0 0 rgba(92, 155, 255, 0.55);
+  animation: scheduleTodayBadge 2.4s ease-in-out infinite;
+}
+
+@keyframes scheduleTodayPulse {
+  0%, 100% { box-shadow: inset 0 0.18rem 0 0 #5C9BFF, 0 0 0.6rem rgba(92, 155, 255, 0.12); }
+  50%      { box-shadow: inset 0 0.18rem 0 0 #7DB0FF, 0 0 1.4rem rgba(92, 155, 255, 0.42); }
+}
+
+@keyframes scheduleTodayBadge {
+  0%, 100% { box-shadow: 0 0 0 rgba(92, 155, 255, 0.0); transform: scale(1); }
+  50%      { box-shadow: 0 0 0.7rem rgba(92, 155, 255, 0.6); transform: scale(1.06); }
+}
+
 .schedule-day-rail {
   display: grid;
   gap: 0.8rem;
@@ -1967,23 +2006,36 @@ body:not([data-route="home"]) .section-heading h2 {
 }
 
 .settings-segment {
-  padding: 0.32rem;
+  display: flex;
+  flex-wrap: nowrap;            /* keep options on ONE row — never stack/overlap */
+  gap: 0.25rem;
+  width: 100%;
+  justify-self: end;
+  padding: 0.3rem;
   border: 0.08rem solid rgba(255, 255, 255, 0.08);
   border-radius: 999rem;
   background: rgba(2, 4, 12, 0.38);
 }
 
 .settings-choice {
-  flex: 1 1 8rem;
-  min-height: 2.55rem;
-  padding: 0 1rem;
+  flex: 1 1 0;                  /* equal widths, allow shrink so they fit inline */
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
+  padding: 0 0.85rem;
   border: 0.08rem solid transparent;
   border-radius: 999rem;
   color: rgba(246, 243, 255, 0.76);
   background: transparent;
-  font-weight: 900;
+  font-weight: 800;
+  font-size: 0.92rem;
+  line-height: 1;
+  white-space: nowrap;
+  text-transform: capitalize;
   cursor: pointer;
-  transition: color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition: color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
 .settings-choice.is-selected,
@@ -1991,8 +2043,7 @@ body:not([data-route="home"]) .section-heading h2 {
   outline: 0;
   color: #ffffff;
   background: linear-gradient(135deg, #5C9BFF, #2563EB);
-  box-shadow: 0 0.7rem 1.4rem rgba(37, 99, 235, 0.3);
-  transform: translateY(-0.06rem);
+  box-shadow: 0 0.3rem 0.8rem rgba(37, 99, 235, 0.28);  /* flat within the track */
 }
 
 .settings-field {

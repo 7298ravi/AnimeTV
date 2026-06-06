@@ -14,9 +14,9 @@
 // ── Franchise version ────────────────────────────────────────────────────────
 // Bump this whenever traversal/merge logic changes so every show gets a fresh
 // franchise rebuild on next open (in-memory cached franchises become stale).
-const _FRANCHISE_VERSION = 6;          // Airing seasons stop at latest aired episode
+const _FRANCHISE_VERSION = 8;          // + per-season aired-till-today episode cap for every anime
 const _MEDIA_CACHE_VERSION_KEY = "animetv-anilist-cache-v";
-const _MEDIA_CACHE_VERSION_VAL = "6";  // clears stale localStorage media cache
+const _MEDIA_CACHE_VERSION_VAL = "8";  // clears stale localStorage media cache
 
 // On first load, clear any localStorage AniList media cache that was built with
 // an older code version.  This prevents stale data from persisting across
@@ -209,7 +209,8 @@ async function _traverseFranchise(startMedia) {
   // relations explored yet.  We use `fetched` for that guard instead.
   const nodeMap = new Map();
   const fetched  = new Set(); // ids whose fullMedia + relations are fully processed
-  const MAX_HOPS = 10;
+  const mainline = new Set(); // ids on the PREQUEL/SEQUEL story chain (the seasons)
+  const MAX_HOPS = 12;
 
   function addMedia(media, relationType = null) {
     if (!media?.id) return;
@@ -246,17 +247,18 @@ async function _traverseFranchise(startMedia) {
 
   // ── Step 1: seed with the entry the user opened ──────────────────────────
   addMedia(startMedia);
+  mainline.add(startMedia.id);
   collectSideEntries(startMedia);
 
   // ── Step 2: follow PREQUEL links back to the franchise root ──────────────
-  // Guard: use `fetched` (not `nodeMap`) so shallow nodes don't block traversal
+  // Follow the prequel of ANY format (TV/ONA/Special/Movie) so a "Final Chapters"
+  // special walks back to its TV parent. Guard with `fetched`, not `nodeMap`.
   let current = startMedia;
   for (let hop = 0; hop < MAX_HOPS; hop++) {
     const prequelEdge = (current.relations?.edges || [])
       .filter(e =>
         e.relationType === "PREQUEL" &&
         e.node.type === "ANIME" &&
-        ANILIST_TV_FORMATS.has(e.node.format) &&
         !fetched.has(e.node.id))
       .sort((a, b) => (a.node.seasonYear || 9999) - (b.node.seasonYear || 9999))[0];
 
@@ -264,32 +266,38 @@ async function _traverseFranchise(startMedia) {
 
     const prequelMedia = await _fetchAniListMedia(prequelEdge.node.id);
     if (!prequelMedia) {
-      // Fetch failed (rate-limit / network) — record the node but keep going
       addNode(prequelEdge.node, "PREQUEL");
+      mainline.add(prequelEdge.node.id);
       break;
     }
 
     addMedia(prequelMedia, "PREQUEL");
+    mainline.add(prequelMedia.id);
     collectSideEntries(prequelMedia);
     current = prequelMedia;
   }
 
   // ── Step 3: follow SEQUEL links forward from the root ────────────────────
-  const tvFetched = [...nodeMap.values()]
-    .filter(v => ANILIST_TV_FORMATS.has(v.node.format) && v.fullMedia)
+  // The root is the oldest entry we've fetched (usually the S1 TV series).
+  const mainlineFetched = [...nodeMap.values()]
+    .filter(v => mainline.has(v.node.anilistId) && v.fullMedia)
     .sort((a, b) => _sortByAirDate(a.node, b.node));
 
-  const root = tvFetched[0];
-  if (!root) return nodeMap;
+  const root = mainlineFetched[0];
+  if (!root) {
+    for (const [id, v] of nodeMap) v.node.mainline = mainline.has(id);
+    return nodeMap;
+  }
 
   current = root.fullMedia;
 
+  // Follow SEQUEL of ANY format — the main story line can end in a "Final Chapters"
+  // SPECIAL or a continuation MOVIE, which must still appear as the final season(s).
   for (let hop = 0; hop < MAX_HOPS; hop++) {
     const sequelEdge = (current.relations?.edges || [])
       .filter(e =>
         e.relationType === "SEQUEL" &&
         e.node.type === "ANIME" &&
-        ANILIST_TV_FORMATS.has(e.node.format) &&
         !fetched.has(e.node.id))
       .sort((a, b) => (a.node.seasonYear || 9999) - (b.node.seasonYear || 9999))[0];
 
@@ -297,33 +305,31 @@ async function _traverseFranchise(startMedia) {
 
     const sequelMedia = await _fetchAniListMedia(sequelEdge.node.id);
     if (!sequelMedia) {
-      // Fetch failed — add node to map so Step 4 can retry, but advance current
-      // to the failed node's known data so we can keep following its children
       addNode(sequelEdge.node, "SEQUEL");
-      // We can't advance `current` without the media, so just stop the chain here.
-      // Step 4 will pick up any shallow TV nodes that were discovered along the way.
+      mainline.add(sequelEdge.node.id);
       break;
     }
 
     addMedia(sequelMedia, "SEQUEL");
+    mainline.add(sequelMedia.id);
     collectSideEntries(sequelMedia);
     current = sequelMedia;
   }
 
-  // ── Step 4: mop up any shallow TV nodes (multi-pass until stable) ─────────
-  // A node is shallow when it appeared as a relation but we haven't fetched its
-  // own media yet. Run multiple passes because each fetch may reveal more nodes.
+  // ── Step 4: mop up any shallow mainline nodes (multi-pass until stable) ───
   for (let pass = 0; pass < 5; pass++) {
     const pending = [...nodeMap.values()]
-      .filter(v => ANILIST_TV_FORMATS.has(v.node.format) && !v.fullMedia);
+      .filter(v => mainline.has(v.node.anilistId) && !v.fullMedia);
     if (!pending.length) break;
 
     await Promise.allSettled(pending.map(async ({ node }) => {
       const media = await _fetchAniListMedia(node.anilistId);
-      if (media) { addMedia(media); collectSideEntries(media); }
+      if (media) { addMedia(media); mainline.add(media.id); collectSideEntries(media); }
     }));
   }
 
+  // Tag every node with whether it sits on the main story chain.
+  for (const [id, v] of nodeMap) v.node.mainline = mainline.has(id);
   return nodeMap;
 }
 
@@ -386,26 +392,85 @@ function _mergeSplitCours(tvSeasons) {
   return result;
 }
 
+// Derive a clean season label from an AniList title, preserving the real
+// designation instead of forcing a generic "Season N". This keeps multi-part
+// franchises correct, e.g. for Attack on Titan:
+//   "Attack on Titan"                       -> Season 1
+//   "Attack on Titan Season 3"              -> Season 3
+//   "Attack on Titan Season 3 Part 2"       -> Season 3 Part 2
+//   "Attack on Titan Final Season"          -> The Final Season
+//   "Attack on Titan Final Season Part 2"   -> The Final Season Part 2
+//   "...Final Season THE FINAL CHAPTERS Special 1" -> The Final Chapters Part 1
+function deriveSeasonLabel(entry, index) {
+  const t = (entry.title || entry.romajiTitle || "").trim();
+  const isFinal    = /\bfinal\s+season\b|\bthe\s+final\b/i.test(t);
+  const isChapters = /\bfinal\s+chapters\b|kanketsu/i.test(t);
+
+  const sm = t.match(/\bseason\s*(\d+)\b/i) || t.match(/\b(\d+)\s*(?:st|nd|rd|th)\s+season\b/i);
+  const seasonNum = sm ? parseInt(sm[1], 10) : null;
+
+  const pm = t.match(/\bpart\s*(\d+)\b/i) || t.match(/\bcour\s*(\d+)\b/i)
+          || t.match(/\b(\d+)\s*(?:st|nd|rd|th)\s+(?:part|cour)\b/i);
+  const partNum = pm ? parseInt(pm[1], 10) : null;
+
+  const sp = t.match(/\bspecial\s*(\d+)\b/i);
+  const specialNum = sp ? parseInt(sp[1], 10) : null;
+
+  if (isChapters) {
+    const n = specialNum ?? partNum;
+    return "The Final Chapters" + (n ? ` Part ${n}` : "");
+  }
+  if (isFinal) return "The Final Season" + (partNum ? ` Part ${partNum}` : "");
+  if (seasonNum) return `Season ${seasonNum}` + (partNum ? ` Part ${partNum}` : "");
+  if (partNum) return `Part ${partNum}`;
+  return index === 0 ? "Season 1" : `Season ${index + 1}`;
+}
+
+// When several consecutive entries share the same base season — e.g.
+// "Season 3" + "Season 3 Part 2", or "The Final Season" + "...Part 2" — relabel
+// them "<base> Part 1", "<base> Part 2", … so the split reads consistently
+// instead of "Season 3" followed by an orphan "Season 3 Part 2".
+function _refineSeasonParts(seasons) {
+  const baseOf = (label) => (label || "").replace(/\s*Part\s*\d+\s*$/i, "").trim();
+  let i = 0;
+  while (i < seasons.length) {
+    const base = baseOf(seasons[i].seasonLabel);
+    let j = i + 1;
+    while (j < seasons.length && baseOf(seasons[j].seasonLabel) === base) j++;
+    if (j - i > 1) {
+      for (let k = i; k < j; k++) seasons[k].seasonLabel = `${base} Part ${k - i + 1}`;
+    }
+    i = j;
+  }
+}
+
 /**
  * Build the franchise structure from a full traversal of AniList relations.
  * Returns { mainAnilistId, tvSeasons[], movies[], ovas[], onas[], specials[], all[] }
+ *
+ * tvSeasons = the main story line (PREQUEL/SEQUEL chain) in chronological order —
+ * every season AND part shown separately with its real label (no merging), so
+ * multi-part franchises (Attack on Titan, etc.) read correctly end to end.
  */
 async function buildFranchiseFromAniListMedia(media) {
   const nodeMap = await _traverseFranchise(media);
 
-  const all = [...nodeMap.values()]
-    .map(v => v.node)
-    .sort(_sortByAirDate);
+  const all = [...nodeMap.values()].map(v => v.node).sort(_sortByAirDate);
 
-  // Merge split-cour pairs before numbering
-  const rawTv    = all.filter(e => ANILIST_TV_FORMATS.has(e.format));
-  const tvSeasons = _mergeSplitCours(rawTv);
-  const movies    = all.filter(e => e.format === "MOVIE");
-  const ovas      = all.filter(e => e.format === "OVA");
-  const onas      = all.filter(e => e.format === "ONA" && !ANILIST_TV_FORMATS.has(e.format));
-  const specials  = all.filter(e => e.format === "SPECIAL" || e.format === "MUSIC");
+  // The main story chain — seasons, split-cour parts, and any "Final Chapters".
+  const tvSeasons = all.filter(e => e.mainline).sort(_sortByAirDate);
+  tvSeasons.forEach((entry, i) => {
+    entry.seasonNumber = i + 1;
+    entry.seasonLabel  = deriveSeasonLabel(entry, i);
+  });
+  _refineSeasonParts(tvSeasons);
 
-  tvSeasons.forEach((entry, i) => { entry.seasonNumber = i + 1; });
+  // Extras = OVAs, movies, parody specials, side stories NOT on the main chain.
+  const extras   = all.filter(e => !e.mainline);
+  const movies   = extras.filter(e => e.format === "MOVIE");
+  const ovas     = extras.filter(e => e.format === "OVA");
+  const onas     = extras.filter(e => e.format === "ONA");
+  const specials = extras.filter(e => e.format === "SPECIAL" || e.format === "MUSIC");
 
   return { mainAnilistId: media.id, tvSeasons, movies, ovas, onas, specials, all };
 }
@@ -475,10 +540,24 @@ function buildSeasonListFromAniListFranchise(show, showsMap, getDetailSeasons, m
     const resolvedId    = matchedShow ? matchedShow.id : `anilist-${entryAniId}`;
     const currentSeasons = isCurrent ? getDetailSeasons(show) : null;
 
+    // Authoritative aired-till-today count for THIS season, straight from
+    // AniList (airing → last aired ep; finished → real total; movie → 1).
+    const airedCount = getAniListDisplayEpisodeCount(entry);
+    let seasonEpisodes = isCurrent
+      ? (currentSeasons || []).flatMap(s => s.episodes || [])
+      : (matchedShow ? makePlaceholderEpisodes(matchedShow, entry.seasonNumber)
+                     : makePlaceholderEpisodesFromAniList(entry));
+    // Never list more episodes than have actually aired, and never spill past
+    // the season's real total — applies to every anime, every source.
+    if (airedCount > 0) {
+      seasonEpisodes = seasonEpisodes.filter(ep =>
+        Number(ep.episode ?? ep.number ?? 0) <= airedCount);
+    }
+
     result.push({
       season:        entry.seasonNumber,
-      title:         `Season ${entry.seasonNumber}`,
-      sourceTitle:   isCurrent ? show.title : (entry.title || matchedShow?.title || `Season ${entry.seasonNumber}`),
+      title:         entry.seasonLabel || `Season ${entry.seasonNumber}`,
+      sourceTitle:   isCurrent ? show.title : (entry.title || matchedShow?.title || entry.seasonLabel || `Season ${entry.seasonNumber}`),
       image:         isCurrent ? (show.image || entry.image) : (matchedShow?.image || entry.image || show.image),
       format:        entry.format,
       status:        entry.status,
@@ -486,10 +565,7 @@ function buildSeasonListFromAniListFranchise(show, showsMap, getDetailSeasons, m
       anilistId:     entry.anilistId,
       isCurrentShow: isCurrent,
       relatedShowId: isCurrent ? null : resolvedId,
-      episodes:      isCurrent
-                       ? (currentSeasons || []).flatMap(s => s.episodes || [])
-                       : (matchedShow ? makePlaceholderEpisodes(matchedShow, entry.seasonNumber)
-                                      : makePlaceholderEpisodesFromAniList(entry)),
+      episodes:      seasonEpisodes,
       playable:      isCurrent ? (currentSeasons || []).some(s => s.playable) : false,
     });
   }
@@ -514,6 +590,15 @@ function buildSeasonListFromAniListFranchise(show, showsMap, getDetailSeasons, m
     const title         = entry.title || `${label} ${idx}`;
     const currentSeasons = isCurrent ? getDetailSeasons(show) : null;
 
+    const airedCount = getAniListDisplayEpisodeCount(entry);
+    let extraEpisodes = isCurrent
+      ? (currentSeasons || []).flatMap(s => s.episodes || [])
+      : makePlaceholderEpisodesFromAniList(entry);
+    if (airedCount > 0) {
+      extraEpisodes = extraEpisodes.filter(ep =>
+        Number(ep.episode ?? ep.number ?? 0) <= airedCount);
+    }
+
     result.push({
       season:        idx,
       title,
@@ -528,9 +613,7 @@ function buildSeasonListFromAniListFranchise(show, showsMap, getDetailSeasons, m
       // Always provide a navigable ID — the show will be in state.shows by the
       // time the user can click (ensureFranchiseShowsInCatalog runs first).
       relatedShowId: isCurrent ? null : resolvedId,
-      episodes:      isCurrent
-                       ? (currentSeasons || []).flatMap(s => s.episodes || [])
-                       : makePlaceholderEpisodesFromAniList(entry),
+      episodes:      extraEpisodes,
       playable:      isCurrent ? (currentSeasons || []).some(s => s.playable) : false,
     });
   }
@@ -570,6 +653,12 @@ async function hydrateShowAniListFranchise(show) {
     const nextEp      = media.nextAiringEpisode?.episode;
     const latestAired = nextEp && nextEp > 1 ? nextEp - 1 : null;
     if (media.episodes) show.totalEpisodes = media.episodes;
+    // Carry the authoritative airing signal onto the show so the detail-view
+    // clamp (getSeasonEpisodeLimit) can cut off at the last aired episode for
+    // every anime, regardless of how the catalog spells the status string.
+    if (media.status) show.anilistStatus = media.status;
+    if (nextEp)       show.nextAiringEp  = nextEp;
+    if (latestAired)  show.latestAiredEp = latestAired;
     const currentCount = Number(show.episode);
     const anilistCount = latestAired ?? media.episodes;
     if (anilistCount && (!currentCount || anilistCount < currentCount)) {
