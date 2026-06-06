@@ -13,6 +13,9 @@ const files = [
   "logo-mark-512.png",
   "logo-mark-transparent.png",
   "logo-wordmark.png",
+  "logo-round.png",
+  "logo-round-192.png",
+  "favicon-32.png",
   "service-worker.js"
 ];
 
