@@ -369,7 +369,53 @@ async function loadAnimeSources() {
   }
 
   render();
+  // Always patch in authoritative airing data (latest-aired episode, ids) from
+  // the server catalog — regardless of whether shows came from cache, the live
+  // merge, or the offline fallback.
+  enrichCatalogAiringData();
   scheduleExternalSourcesLoad();
+}
+
+// The client builds its catalog from AniList trending + Jikan directly, but some
+// airing shows arrive Jikan-only (no AniList airing fields), so their cards would
+// fall back to "TV". The server's /api/catalog cross-enriches every entry with
+// AniList data, so pull the authoritative latest-aired / status / ids from there
+// and patch the in-memory catalog, then re-render.
+async function enrichCatalogAiringData(attempt = 0) {
+  try {
+    const res = await fetchWithTimeout("./api/catalog", { cache: "no-store" }, 12000);
+    if (!res.ok) throw new Error("catalog unavailable");
+    const json = await res.json();
+    const items = Array.isArray(json.items) ? json.items : [];
+    if (!items.length) throw new Error("catalog empty");
+    const byAni = new Map();
+    const byMal = new Map();
+    items.forEach((it) => {
+      if (it.anilistId) byAni.set(String(it.anilistId), it);
+      if (it.malId) byMal.set(String(it.malId), it);
+    });
+    let changed = false;
+    // Patch the live catalog (state.shows) so later array swaps don't lose this.
+    (state.shows || []).forEach((s) => {
+      const it = (s.anilistId && byAni.get(String(s.anilistId)))
+              || (s.malId && byMal.get(String(s.malId)));
+      if (!it) return;
+      if (it.latestAiredEp != null) s.latestAiredEp = it.latestAiredEp;
+      if (it.nextAiringEpisodeNumber != null) s.nextAiringEpisodeNumber = it.nextAiringEpisodeNumber;
+      if (it.totalEpisodes != null) s.totalEpisodes = it.totalEpisodes;
+      if (it.status) s.status = it.status;
+      if (it.episode != null && it.episode !== "?") s.episode = it.episode;
+      if (!s.anilistId && it.anilistId) s.anilistId = it.anilistId;
+      changed = true;
+    });
+    if (changed) {
+      writeResponseCache("direct-catalog", state.shows);
+      render();
+    }
+  } catch {
+    // /api/catalog may still be warming up — retry a few times.
+    if (attempt < 5) window.setTimeout(() => enrichCatalogAiringData(attempt + 1), 3000);
+  }
 }
 
 function scheduleExternalSourcesLoad() {
@@ -467,6 +513,9 @@ async function loadExternalSources() {
         : `${addonCount} addon titles`;
       setSourceStatus(catalogStatusLabel("AniList + Jikan + Sources", state.shows));
       render();
+      // Re-apply authoritative airing data — this merge rebuilt the show objects
+      // and dropped the earlier enrichment.
+      enrichCatalogAiringData();
     } else {
       state.apiStatus.local = enabledSources.length ? "No titles loaded" : "No enabled sources";
       state.addonSections = [];
