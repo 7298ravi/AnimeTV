@@ -2274,6 +2274,15 @@ body:not([data-route="home"]) .section-heading h2 {
   background: rgba(92, 155, 255, 0.06);
 }
 
+.settings-stat {
+  justify-self: end;
+  text-align: right;
+  color: rgba(246, 243, 255, 0.92);
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 0.01em;
+}
+
 .settings-line > span {
   min-width: 0;
   color: rgba(246, 243, 255, 0.78);
@@ -5577,15 +5586,15 @@ body.player-cinema-open .close-button {
 .carousel-stage {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(23rem, 1fr) clamp(12rem, 18vw, 17rem);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 1fr;
   align-items: center;
-  gap: clamp(2rem, 5vw, 5rem);
-  min-height: clamp(28rem, 56vh, 39rem);
+  gap: 0;
+  min-height: clamp(31rem, 66vh, 46rem);
   height: auto;
-  padding: clamp(1.1rem, 2.4vw, 2.8rem) clamp(1.6rem, 4vw, 4.2rem) 5.8rem;
+  padding: clamp(2rem, 5vw, 5.5rem) clamp(1.6rem, 5vw, 5.5rem) 6.2rem;
   border-radius: 0;
-  overflow: visible;
+  overflow: hidden;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -5596,10 +5605,10 @@ body.player-cinema-open .close-button {
 }
 
 .carousel-stage.is-loading {
-  grid-template-columns: minmax(23rem, 1fr) clamp(12rem, 18vw, 17rem);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  min-height: clamp(28rem, 56vh, 39rem);
-  gap: clamp(2rem, 5vw, 5rem);
+  min-height: clamp(31rem, 66vh, 46rem);
+  gap: 0;
   cursor: default;
 }
 
@@ -5616,41 +5625,64 @@ body.player-cinema-open .close-button {
 
 .carousel-backdrop {
   position: absolute;
-  inset: -1.2rem 0 -3.8rem;
+  inset: 0;
   background: linear-gradient(135deg, #58a8ff, #ef5bb8 52%, #f2bb46);
-  background-position: center 32%;
+  background-position: center center;
   background-size: cover;
-  opacity: 0.96;
-  filter: saturate(1.22) contrast(1.1) brightness(0.82);
-  transform: none;
+  background-repeat: no-repeat;
+  opacity: 1;
+  filter: saturate(1.12) contrast(1.06) brightness(0.82);
+  transform: scale(1.002);
   transition: opacity 280ms ease, transform 420ms ease, filter 420ms ease;
 }
 
 .carousel-backdrop.has-banner {
   background-position: center center;
   background-size: cover;
+  image-rendering: auto;
 }
 
-.carousel-backdrop.is-poster-backdrop {
-  background-color: #101421;
-  background-position: right 6% center;
-  background-repeat: no-repeat;
-  background-size: auto 118%;
-  filter: saturate(1.18) contrast(1.08) brightness(0.66);
-  opacity: 0.86;
-  transform: none;
+/* Hero trailer video — sits above the cover image but below the readability
+   gradient (.carousel-stage::after, z-index:1), so the title stays legible.
+   Inserted right after .carousel-backdrop and covers the stage like the image. */
+.carousel-trailer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 600ms ease;
 }
+
+.carousel-stage.is-trailer-playing .carousel-trailer {
+  opacity: 1;
+}
+
+.carousel-trailer iframe {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 177.78vh;   /* 16:9 cover by viewport height */
+  height: 56.25vw;   /* 16:9 cover by viewport width  */
+  min-width: 100%;
+  min-height: 100%;
+  transform: translate(-50%, -50%);
+  border: 0;
+  pointer-events: none;
+}
+
+body.reduce-motion .carousel-trailer { display: none; }
 
 .carousel-stage::after {
   content: "";
   position: absolute;
-  inset: -1.2rem 0 -3.8rem;
+  inset: 0;
   z-index: 1;
   background:
-    radial-gradient(circle at 76% 36%, rgba(255, 255, 255, 0.08), transparent 18rem),
-    linear-gradient(90deg, rgba(8, 10, 19, 0.99) 0%, rgba(8, 10, 19, 0.78) 34%, rgba(8, 10, 19, 0.3) 63%, rgba(8, 10, 19, 0.1) 100%),
-    linear-gradient(0deg, var(--bg) 0%, rgba(8, 10, 19, 0.58) 14%, transparent 56%),
-    linear-gradient(180deg, rgba(8, 10, 19, 0.2) 0%, transparent 32%);
+    radial-gradient(circle at 78% 34%, rgba(255, 255, 255, 0.06), transparent 22rem),
+    linear-gradient(90deg, rgba(8, 10, 19, 0.96) 0%, rgba(8, 10, 19, 0.8) 30%, rgba(8, 10, 19, 0.3) 60%, rgba(8, 10, 19, 0.08) 100%),
+    linear-gradient(0deg, var(--bg) 0%, rgba(8, 10, 19, 0.56) 14%, transparent 54%),
+    linear-gradient(180deg, rgba(8, 10, 19, 0.1) 0%, transparent 35%);
 }
 
 .hero-motion {
@@ -5692,23 +5724,13 @@ body.player-cinema-open .close-button {
   background: linear-gradient(90deg, transparent, rgba(245, 227, 107, 0.42), transparent);
 }
 
-.carousel-poster-wrap,
 .carousel-info {
   position: relative;
   z-index: 2;
 }
 
 .carousel-poster-wrap {
-  grid-column: 2;
-  grid-row: 1;
-  align-self: center;
-  justify-self: end;
-  position: relative;
-  width: min(100%, 23rem);
-  aspect-ratio: 2 / 3;
-  overflow: visible;
-  transform-origin: center;
-  transition: transform 300ms ease, opacity 250ms ease;
+  display: none;
 }
 
 .carousel-poster-wrap::before {
@@ -5836,7 +5858,7 @@ body.player-cinema-open .close-button {
   gap: 0.85rem;
   padding-top: 0.15rem;
   min-width: 0;
-  max-width: min(48rem, 58vw);
+  max-width: min(46rem, 62vw);
   height: auto;
   max-height: none;
   padding: 0;
@@ -5888,12 +5910,10 @@ body.player-cinema-open .close-button {
   font-weight: 900;
 }
 
-.carousel-stage.is-changing .carousel-poster-wrap,
 .carousel-stage.is-changing .carousel-info {
   animation: carousel-slide-next 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-.carousel-stage.is-changing.is-prev .carousel-poster-wrap,
 .carousel-stage.is-changing.is-prev .carousel-info {
   animation-name: carousel-slide-prev;
 }

@@ -176,14 +176,12 @@ const fakePlay = document.querySelector("#fakePlay");
 const castButton = document.querySelector("#castButton");
 const episodeList = document.querySelector("#episodeList");
 const sections = document.querySelectorAll("[data-section]");
-const carouselPoster = document.querySelector("#carouselPoster");
 const carouselBackdrop = document.querySelector("#carouselBackdrop");
 const carouselTitle = document.querySelector("#carouselTitle");
 const carouselText = document.querySelector("#carouselText");
 const carouselMeta = document.querySelector("#carouselMeta");
 const carouselOpen = document.querySelector("#carouselOpen");
 const carouselStage = document.querySelector("#carouselStage");
-const carouselPosterWrap = document.querySelector("#carouselPosterWrap");
 const carouselIndicators = document.querySelector("#carouselIndicators");
 let carouselTimer = null;
 let lastInputWasPointer = false;
@@ -227,7 +225,10 @@ function toggleSidebar() {
   localStorage.setItem("animetv-sidebar-collapsed", String(state.sidebarCollapsed));
   // Fire a transient class so the logo can play a one-shot reaction that's
   // synced with the sidebar slide (see .is-toggling rules in styles.css).
-  document.body.classList.remove("is-toggling");
+  // Remove ALL transient classes first — otherwise rapid/alternating clicks
+  // leave both is-collapsing AND is-expanding on the body at once, which runs
+  // conflicting animations and makes the toggle look broken after a few uses.
+  document.body.classList.remove("is-toggling", "is-collapsing", "is-expanding");
   // force reflow so re-adding the class restarts the animation even on rapid clicks
   void document.body.offsetWidth;
   document.body.classList.add("is-toggling", state.sidebarCollapsed ? "is-collapsing" : "is-expanding");
@@ -801,8 +802,12 @@ async function fetchJikanPages(endpoint, source, pages) {
 
 
 function setSourceStatus(message) {
-  const status = document.querySelector("#sourceStatus");
-  if (status) status.textContent = message;
+  // Catalog totals now live in Settings (not on the Home hero). Keep the latest
+  // string in state so the Settings panel can show it whenever it's opened, and
+  // update the live element if Settings is currently rendered.
+  state.catalogStatus = message;
+  const el = document.querySelector("#settingsCatalogStatus");
+  if (el) el.textContent = message;
 }
 
 function catalogStatusLabel(sourceLabel, shows = []) {
@@ -854,7 +859,7 @@ function recentlyAiredShows(limit = 8) {
   // Build candidates: airing shows with a known broadcast day
   const candidates = state.shows
     .filter((show) => {
-      if (!show.image) return false;
+      if (!getCarouselArtwork(show)) return false;
       if (!show.day || show.day === "TBA" || show.day === "Local") return false;
       const status = (show.status || "").toUpperCase();
       if (status === "FINISHED" || status === "CANCELLED") return false;
@@ -895,11 +900,12 @@ function recentlyAiredShows(limit = 8) {
     })
     .filter(Boolean);
 
-  // Sort most-recent first, then by visual quality (banner > score)
+  // Sort most-recent first, then by score. Every candidate already has a
+  // dedicated landscape banner, so portrait covers never enter the hero.
   candidates.sort((a, b) => {
     const timeDiff = b.lastAiredMs - a.lastAiredMs;
     if (timeDiff !== 0) return timeDiff;
-    return Number(Boolean(b.show.banner)) - Number(Boolean(a.show.banner));
+    return Number(b.show.score || 0) - Number(a.show.score || 0);
   });
 
   // Deduplicate by normalised title and collect up to `limit` shows
@@ -915,7 +921,7 @@ function recentlyAiredShows(limit = 8) {
   // If we still don't have enough, pad with high-quality airing shows
   if (result.length < limit) {
     const pad = sortCarouselQuality(
-      state.shows.filter((s) => s.image && !seenTitles.has(normalizeTitle(s.title)))
+      state.shows.filter((s) => getCarouselArtwork(s) && !seenTitles.has(normalizeTitle(s.title)))
     ).slice(0, limit - result.length);
     result.push(...pad);
   }
@@ -928,13 +934,36 @@ function todayShows() {
   return recentlyAiredShows(8);
 }
 
+function getCarouselArtwork(show = {}) {
+  const poster = String(show.image || show.poster || show.cover || "").trim();
+  const candidates = [
+    show.banner,
+    show.backdrop,
+    show.heroImage,
+    show.wideImage,
+    show.landscapeImage
+  ];
+  return candidates
+    .map((value) => String(value || "").trim())
+    .find((value) => value && value !== poster) || "";
+}
 
 function renderCarousel() {
-  const items = todayShows();
+  // On-air / recently-aired pool only (these already have landscape artwork).
+  const pool = recentlyAiredShows(24).filter((s) => getCarouselArtwork(s));
+  // Kick off trailer lookups for the pool; re-renders when they resolve.
+  ensureCarouselTrailers(pool);
+  // Prefer on-air shows that have a trailer ("a video for every anime"); until
+  // trailers resolve on first load, fall back to the image-only on-air pool.
+  const withTrailer = pool.filter((s) => {
+    const tr = s.anilistId ? _readTrailerCache(String(s.anilistId)) : null;
+    return tr && tr.id;
+  });
+  const items = (withTrailer.length ? withTrailer : pool).slice(0, 8);
   if (!items.length) {
+    stopCarouselTrailer();
     carouselStage.classList.add("is-loading");
-    carouselPosterWrap.innerHTML = `<div class="carousel-poster carousel-poster-skeleton" aria-hidden="true"></div>`;
-    carouselBackdrop.classList.remove("has-banner", "is-poster-backdrop");
+    carouselBackdrop.classList.remove("has-banner");
     carouselBackdrop.style.backgroundImage = "linear-gradient(135deg, #121733 0%, #1b1a3b 38%, #0b2637 100%)";
     carouselTitle.textContent = "Loading ZenkaiTV...";
     carouselText.textContent = "Getting the catalog ready.";
@@ -949,20 +978,12 @@ function renderCarousel() {
   if (state.carouselIndex >= items.length) state.carouselIndex = 0;
   if (state.carouselIndex < 0) state.carouselIndex = items.length - 1;
   const show = items[state.carouselIndex];
-  const art = show.banner || "";
-  const fallbackArt = show.image || "";
-  const poster = show.image || show.banner || "";
+  const art = getCarouselArtwork(show);
 
-  carouselPosterWrap.innerHTML = `
-    <img class="carousel-poster" id="carouselPoster" src="${poster}" alt="" decoding="async" fetchpriority="high" ${poster ? "" : "hidden"}>
-  `;
   carouselBackdrop.classList.toggle("has-banner", Boolean(art));
-  carouselBackdrop.classList.toggle("is-poster-backdrop", !art && Boolean(fallbackArt));
   carouselBackdrop.style.backgroundImage = art
     ? `url("${art}")`
-    : fallbackArt
-      ? `url("${fallbackArt}")`
-      : "linear-gradient(135deg, #121733 0%, #1b1a3b 38%, #0b2637 100%)";
+    : "linear-gradient(135deg, #121733 0%, #1b1a3b 38%, #0b2637 100%)";
   carouselTitle.textContent = getShowTitle(show);
   carouselText.textContent = simpleCarouselText(show);
   carouselMeta.textContent = [show.day, show.time, show.genre.toUpperCase()].filter(Boolean).join(" | ");
@@ -972,13 +993,15 @@ function renderCarousel() {
   carouselOpen.dataset.openEpisode = String(target.episodeNumber || "");
   carouselStage.dataset.openShow = String(show.id || "");
   renderCarouselIndicators(items);
+  // Show the cover for a beat, then play this anime's trailer (stops on move).
+  scheduleCarouselTrailer(show);
 }
 
 function renderCarouselIndicators(items) {
   if (!carouselIndicators) return;
   carouselIndicators.innerHTML = items.slice(0, 8).map((show, index) => `
     <button class="carousel-dot focusable ${index === state.carouselIndex ? "is-selected" : ""}" data-carousel-index="${index}" aria-label="Show ${escapeHtml(getShowTitle(show))}">
-      ${show.image ? `<img src="${show.image}" alt="">` : "<span></span>"}
+      ${getCarouselArtwork(show) ? `<img src="${getCarouselArtwork(show)}" alt="">` : "<span></span>"}
     </button>
   `).join("");
 
@@ -1014,10 +1037,152 @@ function moveCarousel(step) {
 function restartCarouselTimer() {
   window.clearInterval(carouselTimer);
   if (!state.uiPreferences.autoplayHero) return;
+  // Longer dwell so each slide can show its cover, then play a chunk of the
+  // trailer before auto-advancing to the next anime.
   carouselTimer = window.setInterval(() => {
     if (!overlay.hidden) return;
+    if (state.route !== "home") return;
     moveCarousel(1);
-  }, 6500);
+  }, CAROUSEL_ADVANCE_MS);
+}
+
+// ── Hero trailer playback ────────────────────────────────────────────────────
+// Each carousel slide shows the cover image for a beat, then auto-plays the
+// anime's trailer (muted) over the backdrop. Any slide change / leaving home /
+// opening a show stops the current trailer. Trailers come from AniList and are
+// only fetched for the on-air carousel pool (≤ a couple dozen ids), then cached.
+
+const CAROUSEL_IMAGE_HOLD_MS = 2600;   // show the cover this long before the video
+const CAROUSEL_ADVANCE_MS    = 15000;  // auto-advance dwell per slide
+const _trailerCache = new Map();       // anilistId(str) -> {id, site} | null | undefined
+const _TRAILER_LS_PREFIX = "zenkaitv-trailer:";
+let _carouselTrailerTimer = null;
+let _carouselTrailerEl = null;
+let _trailerFetchInFlight = false;
+
+function _readTrailerCache(id) {
+  const key = String(id);
+  if (_trailerCache.has(key)) return _trailerCache.get(key);
+  try {
+    const raw = localStorage.getItem(_TRAILER_LS_PREFIX + key);
+    if (raw !== null) { const v = JSON.parse(raw); _trailerCache.set(key, v); return v; }
+  } catch { /* storage may be unavailable */ }
+  return undefined; // not yet known
+}
+
+function _writeTrailerCache(id, value) {
+  const key = String(id);
+  _trailerCache.set(key, value);
+  try { localStorage.setItem(_TRAILER_LS_PREFIX + key, JSON.stringify(value)); } catch { /* ignore */ }
+}
+
+async function fetchAniListTrailers(ids) {
+  const need = [...new Set(ids.map(String))].filter((id) => _readTrailerCache(id) === undefined);
+  if (!need.length || _trailerFetchInFlight) return;
+  _trailerFetchInFlight = true;
+  const query = `query($ids:[Int]){ Page(perPage:50){ media(id_in:$ids, type:ANIME){ id trailer{ id site } } } }`;
+  try {
+    const res = await fetch("https://graphql.anilist.co", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ query, variables: { ids: need.map(Number) } })
+    });
+    if (!res.ok) { need.forEach((id) => _writeTrailerCache(id, null)); return; }
+    const json = await res.json();
+    const media = json?.data?.Page?.media || [];
+    const seen = new Set();
+    media.forEach((m) => {
+      seen.add(String(m.id));
+      const tr = m.trailer && m.trailer.id
+        ? { id: m.trailer.id, site: String(m.trailer.site || "youtube").toLowerCase() }
+        : null;
+      _writeTrailerCache(m.id, tr);
+    });
+    need.forEach((id) => { if (!seen.has(id)) _writeTrailerCache(id, null); });
+  } catch {
+    need.forEach((id) => _writeTrailerCache(id, null));
+  } finally {
+    _trailerFetchInFlight = false;
+  }
+}
+
+function ensureCarouselTrailers(pool) {
+  const ids = pool.filter((s) => s.anilistId).map((s) => String(s.anilistId));
+  const unknown = ids.filter((id) => _readTrailerCache(id) === undefined);
+  if (!unknown.length) return;
+  fetchAniListTrailers(unknown).then(() => {
+    if (state.route === "home" && overlay.hidden) renderCarousel();
+  });
+}
+
+function trailerEmbedUrl(trailer) {
+  if (!trailer || !trailer.id) return "";
+  if (trailer.site === "dailymotion") {
+    return `https://www.dailymotion.com/embed/video/${encodeURIComponent(trailer.id)}?autoplay=1&mute=1&controls=0&ui-logo=0&ui-start-screen-info=0&queue-enable=0`;
+  }
+  // default: YouTube (privacy-enhanced, muted, looping, chrome-free).
+  // enablejsapi lets us listen for onError so non-embeddable videos fall back
+  // to the cover image instead of showing YouTube's error screen.
+  const id = encodeURIComponent(trailer.id);
+  return `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&mute=1&controls=0&loop=1&playlist=${id}&modestbranding=1&playsinline=1&rel=0&iv_load_policy=3&disablekb=1&fs=0&enablejsapi=1`;
+}
+
+let _carouselTrailerMsgHandler = null;
+
+function stopCarouselTrailer() {
+  if (_carouselTrailerTimer) { window.clearTimeout(_carouselTrailerTimer); _carouselTrailerTimer = null; }
+  if (_carouselTrailerMsgHandler) { window.removeEventListener("message", _carouselTrailerMsgHandler); _carouselTrailerMsgHandler = null; }
+  if (_carouselTrailerEl) { _carouselTrailerEl.remove(); _carouselTrailerEl = null; }
+  carouselStage?.classList.remove("is-trailer-playing");
+}
+
+function scheduleCarouselTrailer(show) {
+  stopCarouselTrailer();
+  if (!state.uiPreferences.autoplayHero) return;      // "Hero autoplay" setting governs this
+  if (!state.uiPreferences.motion) return;            // respect reduce-motion preference
+  if (!show || !show.anilistId) return;
+  const trailer = _readTrailerCache(String(show.anilistId));
+  if (!trailer || !trailer.id) return;
+  const slideId = String(show.id || "");
+  _carouselTrailerTimer = window.setTimeout(() => {
+    // Only start if we're still on the same slide, on home, with no show open.
+    if (state.route !== "home" || !overlay.hidden) return;
+    if (String(carouselStage?.dataset.openShow || "") !== slideId) return;
+    const url = trailerEmbedUrl(trailer);
+    if (!url || !carouselBackdrop) return;
+    const wrap = document.createElement("div");
+    wrap.className = "carousel-trailer";
+    wrap.setAttribute("aria-hidden", "true");
+    const frame = document.createElement("iframe");
+    frame.src = url;
+    frame.title = "";
+    frame.tabIndex = -1;
+    frame.setAttribute("frameborder", "0");
+    frame.setAttribute("allow", "autoplay; encrypted-media; picture-in-picture");
+    wrap.appendChild(frame);
+    carouselBackdrop.insertAdjacentElement("afterend", wrap);
+    _carouselTrailerEl = wrap;
+    carouselStage.classList.add("is-trailer-playing");
+
+    // Drop the iframe back to the cover image if YouTube refuses to embed it
+    // (onError) — keeps the hero clean instead of showing YouTube's error card.
+    if (trailer.site !== "dailymotion") {
+      frame.addEventListener("load", () => {
+        try {
+          frame.contentWindow.postMessage(
+            JSON.stringify({ event: "listening", id: 1, channel: "widget" }), "*"
+          );
+        } catch { /* cross-origin handshake best-effort */ }
+      });
+      _carouselTrailerMsgHandler = (e) => {
+        if (typeof e.origin !== "string" || !/youtube\.com|youtube-nocookie\.com/.test(e.origin)) return;
+        let data;
+        try { data = typeof e.data === "string" ? JSON.parse(e.data) : e.data; } catch { return; }
+        if (data && data.event === "onError") stopCarouselTrailer();
+      };
+      window.addEventListener("message", _carouselTrailerMsgHandler);
+    }
+  }, CAROUSEL_IMAGE_HOLD_MS);
 }
 
 function cardTemplate(show, index = 0) {
@@ -2586,6 +2751,13 @@ function renderSettings() {
         </div>
 
         <div class="settings-divider"></div>
+        <div class="settings-group-label">Catalog</div>
+        <div class="settings-line">
+          <span>Loaded catalog <small>Live source / title / episode totals</small></span>
+          <span class="settings-stat" id="settingsCatalogStatus">${escapeHtml(state.catalogStatus || "Syncing anime metadata…")}</span>
+        </div>
+
+        <div class="settings-divider"></div>
         <div class="settings-group-label">Data</div>
         <div class="settings-actions">
           <button class="secondary-action focusable" data-clear-cache>${t("clearCache")}</button>
@@ -3005,6 +3177,9 @@ function setRoute(route) {
   });
 
   syncRouteVisibility();
+  // The hero trailer only runs on Home — stop it elsewhere, restart on return.
+  if (route === "home") renderCarousel();
+  else stopCarouselTrailer();
   if (route === "anipub") ensureAniPubCatalogLoaded();
   if (route === "settings") renderSettings();
   if (route === "sources") renderSources();
@@ -3035,6 +3210,7 @@ function scrollToRoute(route) {
 }
 
 async function openShow(id, target = {}) {
+  stopCarouselTrailer();   // never leave a hero trailer running behind the overlay
   const wantedId = String(id || "");
   let show = state.shows.find((entry) => String(entry.id) === wantedId || getShowKey(entry) === wantedId);
   if (!show) {
@@ -3508,6 +3684,8 @@ function closeShow() {
   refreshFocusables();
   const firstCard = document.querySelector(".show-card:not([hidden])");
   if (firstCard) firstCard.focus();
+  // Returning to Home — resume the hero cover→trailer cycle.
+  if (state.route === "home") renderCarousel();
 }
 
 function stopActivePlayback() {
@@ -4646,8 +4824,6 @@ function wirePlayerChrome(frame) {
     button.addEventListener("click", () => {
       const selectedEpisode = state.activeEpisode?.episode;
       if (!selectedEpisode) return;
-      const source = getEpisodePlaybackSources(selectedEpisode).find((item) => item.id === button.dataset.playerSource);
-      showToast(source ? `Checking ${source.label || "server"}...` : "Checking server...");
       selectedEpisode.selectedSourceId = button.dataset.playerSource;
       state.preferredSource = selectedEpisode.selectedSourceId;
       try {
@@ -5466,7 +5642,9 @@ function makePlaceholderEpisodes(show, seasonNumber) {
   const knownCount = getSeasonEpisodeLimit(show);
   if (knownCount === 0) return [];
   const count = Number.isFinite(knownCount) && knownCount > 0 ? knownCount : 12;
-  return Array.from({ length: Math.min(count, 200) }, (_, index) => ({
+  // Cap high enough for long-running shounen (Naruto 220, Bleach 366,
+  // One Piece 1100+) so their episode lists are never truncated.
+  return Array.from({ length: Math.min(count, 2000) }, (_, index) => ({
     season: seasonNumber,
     episode: index + 1,
     title: "Not available yet",
@@ -6454,6 +6632,17 @@ document.addEventListener("keydown", (event) => {
     ArrowDown: "down",
     ArrowUp: "up"
   };
+
+  // Hero carousel: when the stage is focused (Android TV D-pad / arrow keys),
+  // Left/Right cycle slides instead of moving spatial focus. Up/Down still move
+  // focus out of the carousel as usual.
+  if ((event.key === "ArrowLeft" || event.key === "ArrowRight") &&
+      state.route === "home" && overlay.hidden &&
+      document.activeElement === carouselStage) {
+    event.preventDefault();
+    moveCarousel(event.key === "ArrowRight" ? 1 : -1);
+    return;
+  }
 
   if (keyMap[event.key]) {
     event.preventDefault();

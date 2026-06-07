@@ -14,9 +14,9 @@
 // ── Franchise version ────────────────────────────────────────────────────────
 // Bump this whenever traversal/merge logic changes so every show gets a fresh
 // franchise rebuild on next open (in-memory cached franchises become stale).
-const _FRANCHISE_VERSION = 8;          // + per-season aired-till-today episode cap for every anime
+const _FRANCHISE_VERSION = 9;          // traverse through any-format chain, but only display real seasons (no bonus OVAs)
 const _MEDIA_CACHE_VERSION_KEY = "animetv-anilist-cache-v";
-const _MEDIA_CACHE_VERSION_VAL = "8";  // clears stale localStorage media cache
+const _MEDIA_CACHE_VERSION_VAL = "9";  // clears stale localStorage media cache
 
 // On first load, clear any localStorage AniList media cache that was built with
 // an older code version.  This prevents stale data from persisting across
@@ -186,6 +186,28 @@ function _normalizeRelationNode(node) {
   };
 }
 
+// Does this title carry an explicit season/part/final designation? Used to tell
+// a real continuation (e.g. AoT "Final Chapters", "...Part 2") apart from a
+// bonus side-entry that AniList happens to wire into the SEQUEL chain.
+function _hasSeasonDesignation(title) {
+  const t = String(title || "").toLowerCase();
+  return /\b(season|part|cour|final|chapter|chapters|kanketsu)\b/.test(t)
+      || /\d+\s*(st|nd|rd|th)\s+(season|part|cour)/.test(t);
+}
+
+// Should a chain entry be DISPLAYED as a numbered season? We still traverse
+// through every format to discover the whole chain (some franchises route the
+// SEQUEL link through a bonus OVA, e.g. Tensei Slime's "Coleus no Yume"), but
+// only real seasons should show up in the season list:
+//   • TV / TV_SHORT / ONA           → always a season
+//   • SPECIAL / OVA / MOVIE         → only if the title marks a continuation
+//                                     (AoT "THE FINAL CHAPTERS Special 1/2")
+function _isDisplaySeason(node) {
+  const fmt = String(node?.format || "").toUpperCase();
+  if (fmt === "TV" || fmt === "TV_SHORT" || fmt === "ONA") return true;
+  return _hasSeasonDesignation(node?.title || node?.romajiTitle);
+}
+
 // ── Full franchise traversal ─────────────────────────────────────────────────
 //
 // AniList relations are a LINKED LIST, not a star graph:
@@ -285,7 +307,7 @@ async function _traverseFranchise(startMedia) {
 
   const root = mainlineFetched[0];
   if (!root) {
-    for (const [id, v] of nodeMap) v.node.mainline = mainline.has(id);
+    for (const [id, v] of nodeMap) v.node.mainline = mainline.has(id) && _isDisplaySeason(v.node);
     return nodeMap;
   }
 
@@ -328,8 +350,10 @@ async function _traverseFranchise(startMedia) {
     }));
   }
 
-  // Tag every node with whether it sits on the main story chain.
-  for (const [id, v] of nodeMap) v.node.mainline = mainline.has(id);
+  // Tag every node with whether it should DISPLAY as a mainline season. We keep
+  // traversing through any-format chain links above, but bonus OVAs/movies that
+  // merely sit on the SEQUEL chain are demoted to extras here.
+  for (const [id, v] of nodeMap) v.node.mainline = mainline.has(id) && _isDisplaySeason(v.node);
   return nodeMap;
 }
 
@@ -480,7 +504,7 @@ async function buildFranchiseFromAniListMedia(media) {
 function makePlaceholderEpisodesFromAniList(entry) {
   const count = getAniListDisplayEpisodeCount(entry);
   if (!count || count <= 0) return [];
-  return Array.from({ length: Math.min(count, 500) }, (_, i) => ({
+  return Array.from({ length: Math.min(count, 2000) }, (_, i) => ({
     season:      entry.seasonNumber || 1,
     episode:     i + 1,
     title:       entry.format === "MOVIE" ? (entry.title || "Movie") : `Episode ${i + 1}`,
