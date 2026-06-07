@@ -570,15 +570,29 @@ function buildSeasonListFromAniListFranchise(show, showsMap, getDetailSeasons, m
     // Authoritative aired-till-today count for THIS season, straight from
     // AniList (airing → last aired ep; finished → real total; movie → 1).
     const airedCount = getAniListDisplayEpisodeCount(entry);
-    let seasonEpisodes = isCurrent
-      ? (currentSeasons || []).flatMap(s => s.episodes || [])
-      : (matchedShow ? makePlaceholderEpisodes(matchedShow, entry.seasonNumber)
-                     : makePlaceholderEpisodesFromAniList(entry));
-    // Never list more episodes than have actually aired, and never spill past
-    // the season's real total — applies to every anime, every source.
-    if (airedCount > 0) {
-      seasonEpisodes = seasonEpisodes.filter(ep =>
-        Number(ep.episode ?? ep.number ?? 0) <= airedCount);
+
+    let seasonEpisodes;
+    let currentPlayable = false;
+    if (isCurrent) {
+      // getDetailSeasons can return the WHOLE franchise (every related season)
+      // when sibling seasons are in the catalog. Use ONLY the season matching
+      // this entry — otherwise Season 1 absorbs every other season's episodes
+      // (e.g. Iruma S1 showing 85 instead of 23).
+      const ds = currentSeasons || [];
+      let pick = ds.find(s => Number(s.season) === Number(entry.seasonNumber));
+      if (!pick && ds.length === 1) pick = ds[0];
+      if (!pick) pick = ds.find(s => (s.episodes || []).some(e => !e.locked));
+      seasonEpisodes = pick ? (pick.episodes || []) : makePlaceholderEpisodesFromAniList(entry);
+      currentPlayable = Boolean(pick?.playable);
+    } else {
+      seasonEpisodes = matchedShow
+        ? makePlaceholderEpisodes(matchedShow, entry.seasonNumber)
+        : makePlaceholderEpisodesFromAniList(entry);
+    }
+    // Cap to the real aired count. Cap by COUNT (slice), not by episode number —
+    // episode numbers can be season-relative, so a number filter can't be trusted.
+    if (airedCount > 0 && seasonEpisodes.length > airedCount) {
+      seasonEpisodes = seasonEpisodes.slice(0, airedCount);
     }
 
     result.push({
@@ -593,7 +607,7 @@ function buildSeasonListFromAniListFranchise(show, showsMap, getDetailSeasons, m
       isCurrentShow: isCurrent,
       relatedShowId: isCurrent ? null : resolvedId,
       episodes:      seasonEpisodes,
-      playable:      isCurrent ? (currentSeasons || []).some(s => s.playable) : false,
+      playable:      isCurrent ? currentPlayable : false,
     });
   }
 
