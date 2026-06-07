@@ -719,6 +719,37 @@ body.sidebar-collapsed .sidebar-toggle span {
   outline: 0;
 }
 
+/* Custom clear (×) button with a clear hover/press indication. The native
+   webkit clear button has no hover feedback, so we replace it with a pill that
+   brightens and scales when the pointer is over it. */
+.search-box input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1.55rem;
+  height: 1.55rem;
+  margin-right: 0.45rem;
+  border-radius: 999rem;
+  cursor: pointer;
+  opacity: 0.65;
+  background:
+    rgba(255, 255, 255, 0.12)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E")
+    center / 0.82rem 0.82rem no-repeat;
+  transition: transform 150ms ease, background-color 150ms ease, opacity 150ms ease, box-shadow 150ms ease;
+}
+
+.search-box input[type="search"]::-webkit-search-cancel-button:hover {
+  opacity: 1;
+  background-color: rgba(92, 155, 255, 0.4);
+  box-shadow: 0 0 0 0.18rem rgba(92, 155, 255, 0.25);
+  transform: scale(1.18);
+}
+
+.search-box input[type="search"]::-webkit-search-cancel-button:active {
+  transform: scale(0.9);
+  background-color: rgba(92, 155, 255, 0.55);
+}
+
 .search-box span:last-child {
   position: absolute;
   right: 1.25rem;
