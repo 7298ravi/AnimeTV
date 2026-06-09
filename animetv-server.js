@@ -5395,26 +5395,30 @@ async function fetchJkanimeEpisode(slug, episode) {
   return { slug, episode: Number(episode) || 0, title, image: ogImage, embeds, episodeUrl: epUrl };
 }
 
-function buildJkCatalog(records) {
-  const bySlug = new Map();
+function buildCrawlCatalog(records, opts = {}) {
+  const source = opts.source || "crawl";
+  const idPrefix = opts.idPrefix || "crawl";
+  const byKey = new Map();
   for (const e of records) {
     if (!e || !e.embeds?.length) continue;
-    let entry = bySlug.get(e.slug);
+    const key = e.key || e.slug;
+    let entry = byKey.get(key);
     if (!entry) {
       entry = {
-        id: `jk-${e.slug}`,
-        title: e.title || prettifyJkSlug(e.slug),
-        romajiTitle: e.title || prettifyJkSlug(e.slug),
+        id: `${idPrefix}-${key}`,
+        title: e.title || prettifyJkSlug(key),
+        romajiTitle: e.title || prettifyJkSlug(key),
         image: e.image || "",
         genre: "anime",
         status: "",
-        source: "jkanime",
-        description: "Imported from jkanime.net via Smart Source.",
+        source,
+        description: `Imported from ${source} via Smart Source.`,
         episodes: []
       };
-      bySlug.set(e.slug, entry);
+      byKey.set(key, entry);
     }
     if (!entry.image && e.image) entry.image = e.image;
+    if ((!entry.title || /^[a-z0-9 ]+$/i.test(entry.title)) && e.title) entry.title = entry.romajiTitle = e.title;
     entry.episodes.push({
       episode: e.episode,
       season: 1,
@@ -5426,7 +5430,7 @@ function buildJkCatalog(records) {
       sources: e.embeds.map((x) => ({ provider: x.provider, url: x.url, externalUrl: x.url, type: "iframe", siteUrl: e.episodeUrl }))
     });
   }
-  for (const entry of bySlug.values()) {
+  for (const entry of byKey.values()) {
     const seenEp = new Set();
     entry.episodes = entry.episodes
       .filter((ep) => (seenEp.has(ep.episode) ? false : (seenEp.add(ep.episode), true)))
@@ -5434,7 +5438,7 @@ function buildJkCatalog(records) {
     entry.totalEpisodes = entry.episodes.length;
     entry.episode = entry.episodes[entry.episodes.length - 1]?.episode || 1;
   }
-  return [...bySlug.values()];
+  return [...byKey.values()];
 }
 
 async function crawlJkanimeSite(limit = 18) {
@@ -5491,44 +5495,201 @@ function parseJkUrl(rawUrl) {
   return { slug: m[1], episode: m[2] ? Number(m[2]) : null };
 }
 
+// ── Generic crawler ───────────────────────────────────────────────────────────
+// Most anime sites embed the same handful of streaming hosts (Streamwish, Mega,
+// Voe, Filemoon, Streamtape, …) inside iframes, JSON "code"/"file" fields, or
+// base64 "remote" fields. We sniff those out of any episode page, so the crawler
+// can "figure out" sites it has no dedicated adapter for.
+const GENERIC_CRAWL_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36",
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "es-ES,es;q=0.9,en;q=0.8"
+};
+const VIDEO_HOSTS = ["streamwish", "sfastwish", "swiftplayers", "playerwish", "embedwish", "wishfast", "filemoon", "vidhide", "vidhidevip", "filelions", "lulustream", "voe", "mp4upload", "streamtape", "stape", "mega.nz", "mega", "doodstream", "dood", "dsvplay", "mixdrop", "okru", "ok.ru", "yourupload", "uqload", "streamlare", "sendvid", "burstcloud"];
+function crawlHostScore(u) {
+  const h = ((String(u).match(/^https?:\/\/([^/]+)/) || [])[1] || "").toLowerCase();
+  const i = VIDEO_HOSTS.findIndex((v) => h.includes(v));
+  return i < 0 ? 999 : i;
+}
+function rankCrawlEmbeds(urls) {
+  const seen = new Set();
+  const out = [];
+  for (let u of urls) {
+    if (!u) continue;
+    u = String(u).trim().replace(/\\\//g, "/").replace(/&amp;/g, "&");
+    if (u.startsWith("//")) u = "https:" + u;
+    if (!/^https?:\/\//i.test(u)) continue;
+    if (/mediafire|\.(zip|rar|torrent)(\?|$)/i.test(u)) continue;
+    if (seen.has(u)) continue;
+    seen.add(u);
+    const score = crawlHostScore(u);
+    if (score === 999) continue;                       // not a known streamable host
+    const host = ((u.match(/^https?:\/\/([^/]+)/) || [])[1] || "").toLowerCase();
+    out.push({ provider: host.replace(/^www\./, "").split(".")[0] || host, url: u, score });
+  }
+  out.sort((a, b) => a.score - b.score);
+  return out;
+}
+function extractEmbedUrls(html) {
+  const urls = [];
+  for (const m of html.matchAll(/<iframe[^>]+src=["']([^"']+)["']/gi)) urls.push(m[1]);
+  for (const m of html.matchAll(/["'](?:code|url|file|embed|link|src)["']\s*:\s*["']((?:https?:|\/\/)[^"']+)["']/gi)) urls.push(m[1]);
+  for (const m of html.matchAll(/["']remote["']\s*:\s*["']([A-Za-z0-9+/=]{16,})["']/g)) {
+    try { urls.push(Buffer.from(m[1], "base64").toString("utf8")); } catch { /* ignore */ }
+  }
+  const av = html.match(/var\s+videos\s*=\s*(\{[\s\S]*?\});/);            // animeflv style
+  if (av) { try { for (const arr of Object.values(JSON.parse(av[1]))) for (const s of (arr || [])) if (s && s.code) urls.push(s.code); } catch { /* ignore */ } }
+  for (const m of html.matchAll(/https?:\/\/[A-Za-z0-9.\-]+\/(?:e|embed|d|v|f|play|video)\/[A-Za-z0-9._\-]+/gi)) urls.push(m[0]);
+  return rankCrawlEmbeds(urls);
+}
+function extractCrawlMeta(html, fallbackTitle) {
+  const ogt = (html.match(/property=["']og:title["']\s+content=["']([^"']+)["']/i) || [])[1]
+    || (html.match(/<title>([^<]+)<\/title>/i) || [])[1] || "";
+  const ogi = (html.match(/property=["']og:image["']\s+content=["']([^"']+)["']/i) || [])[1] || "";
+  const title = decodeHtmlEntities(ogt)
+    .replace(/^\s*(?:ver\s+(?:anime|online)?|anime|pelicula|online)\s+/i, "")   // "Ver Anime X" → "X"
+    .replace(/\s*[|\-–·»:].*$/, " ")
+    .replace(/\s+(?:Episodio|Capitulo|Cap[íi]tulo|Episode|Ep\.?)\s*\d+.*$/i, "")
+    .replace(/\s+\d+\s+(?:Sub|Latino|Espa[nñ]ol|Castellano|Online)[\s\S]*$/i, "")
+    .replace(/\s+(?:Sub|Latino|Espa[nñ]ol|Online|Gratis|HD)\b.*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { title: title || fallbackTitle, image: ogi };
+}
+function inferSeriesKey(url) {
+  let p = url;
+  try { p = new URL(url).pathname; } catch { /* keep */ }
+  const parts = p.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+  while (parts.length > 1 && /^(ver|watch|anime|animes|episodio|episode|capitulo|cap|series|serie|tv|online)$/i.test(parts[0])) parts.shift();
+  let slug = parts[parts.length - 1] || "anime";
+  slug = slug.replace(/[-_/]?(?:episodio|capitulo|cap|episode|ep)?[-_/]?\d+$/i, "") || slug;
+  return slug.replace(/[^a-z0-9-]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "anime";
+}
+async function fetchGenericEpisode(epUrl, hint = {}) {
+  const r = await fetchWithTimeout(epUrl, { headers: GENERIC_CRAWL_HEADERS }, HOSTED_RUNTIME ? 8000 : 12000);
+  if (!r.ok) return null;
+  const html = await r.text();
+  const embeds = extractEmbedUrls(html);
+  if (!embeds.length) return null;
+  const key = hint.key || inferSeriesKey(epUrl);
+  const meta = extractCrawlMeta(html, hint.title || prettifyJkSlug(key));
+  const epNum = Number(hint.episode || (epUrl.match(/(\d+)\/?$/) || [])[1] || 1);
+  return { key, slug: key, episode: epNum, title: hint.title || meta.title, image: hint.image || meta.image, embeds, episodeUrl: epUrl };
+}
+// Find episode-page links inside an anime/listing page (generic heuristic).
+function findEpisodeLinks(html, base) {
+  const out = [];
+  const seen = new Set();
+  const push = (href) => {
+    let u = href;
+    if (u.startsWith("/")) u = base.replace(/\/+$/, "") + u;
+    if (!/^https?:\/\//i.test(u)) return;
+    if (seen.has(u)) return;
+    seen.add(u);
+    out.push(u);
+  };
+  for (const m of html.matchAll(/href=["'](\/?(?:ver|watch|episodio|episode|capitulo)\/[^"'#?]+?-?\d+)["']/gi)) push(m[1]);
+  for (const m of html.matchAll(/href=["']((?:https?:\/\/[^"']+)?\/[a-z0-9-]+\/\d+)["']/gi)) push(m[1]);
+  return out;
+}
+
+// AnimeFLV adapter: anime pages expose `var episodes = [[num,id],…]`.
+function animeFlvBase(url) {
+  const m = String(url).match(/^(https?:\/\/[a-z0-9.\-]*animeflv\.net)/i);
+  return (m ? m[1] : "https://www3.animeflv.net").replace(/^http:/, "https:");
+}
+async function crawlAnimeFlvAnime(base, slug, cap = HOSTED_RUNTIME ? 26 : 60) {
+  const r = await fetchWithTimeout(`${base}/anime/${slug}`, { headers: GENERIC_CRAWL_HEADERS }, HOSTED_RUNTIME ? 8000 : 12000);
+  if (!r.ok) throw new Error(`AnimeFLV anime page HTTP ${r.status}`);
+  const html = await r.text();
+  const m = html.match(/var\s+episodes\s*=\s*(\[[\s\S]*?\]);/);
+  let nums = [];
+  if (m) { try { nums = JSON.parse(m[1]).map((a) => Number(a[0])).filter(Boolean); } catch { /* ignore */ } }
+  if (!nums.length) throw new Error("No episodes found on the AnimeFLV page.");
+  const meta = extractCrawlMeta(html, prettifyJkSlug(slug));
+  const episodes = [...new Set(nums)].sort((a, b) => b - a).slice(0, cap);
+  const records = await mapLimit(episodes, 6, (ep) =>
+    fetchGenericEpisode(`${base}/ver/${slug}-${ep}`, { key: slug, episode: ep, title: meta.title, image: meta.image }).catch(() => null));
+  return records.filter(Boolean);
+}
+async function crawlGenericSite(base, limit = 16) {
+  const r = await fetchWithTimeout(`${base}/`, { headers: GENERIC_CRAWL_HEADERS }, HOSTED_RUNTIME ? 9000 : 14000);
+  if (!r.ok) throw new Error(`Homepage HTTP ${r.status}`);
+  const html = await r.text();
+  const links = findEpisodeLinks(html, base).slice(0, limit);
+  if (!links.length) throw new Error("No episode links found on the homepage.");
+  const records = await mapLimit(links, 5, (u) => fetchGenericEpisode(u).catch(() => null));
+  return records.filter(Boolean);
+}
+async function crawlGenericAnime(animeUrl, base, cap = HOSTED_RUNTIME ? 26 : 60) {
+  const r = await fetchWithTimeout(animeUrl, { headers: GENERIC_CRAWL_HEADERS }, HOSTED_RUNTIME ? 8000 : 12000);
+  if (!r.ok) throw new Error(`Anime page HTTP ${r.status}`);
+  const html = await r.text();
+  const meta = extractCrawlMeta(html, prettifyJkSlug(inferSeriesKey(animeUrl)));
+  const key = inferSeriesKey(animeUrl);
+  let links = findEpisodeLinks(html, base);
+  // de-dupe to this series + cap (newest first)
+  links = [...new Set(links)].slice(0, cap);
+  if (!links.length) {
+    // Maybe the URL itself is an episode page.
+    const one = await fetchGenericEpisode(animeUrl, { key, title: meta.title, image: meta.image });
+    return one ? [one] : [];
+  }
+  const records = await mapLimit(links, 6, (u) => fetchGenericEpisode(u, { key, title: meta.title, image: meta.image }).catch(() => null));
+  return records.filter(Boolean);
+}
+
+function looksLikeEpisodeUrl(path) {
+  return /\/ver\/|\/watch\/|\/episodio|\/capitulo|\/episode|-\d+$|\/\d+$/i.test(path);
+}
+
 async function handleCrawl(request, response) {
   const started = Date.now();
   let payload = {};
   try { payload = await readJsonBody(request); } catch { payload = {}; }
-  const rawUrl = String(payload?.url || "").trim();
+  let rawUrl = String(payload?.url || "").trim();
+  if (rawUrl && !/^https?:\/\//i.test(rawUrl)) rawUrl = "https://" + rawUrl.replace(/^\/+/, "");
 
-  if (!/(^|\/\/|\.)jkanime\.net(\/|$)/i.test(rawUrl) && !/jkanime\.net/i.test(rawUrl)) {
-    sendJson(response, { ok: false, error: "The crawler currently supports jkanime.net only." });
-    return;
-  }
+  let parsed;
+  try { parsed = new URL(rawUrl); } catch { sendJson(response, { ok: false, error: "Please paste a valid website URL." }); return; }
+  const base = `${parsed.protocol}//${parsed.host}`;
+  const domain = parsed.host.replace(/^www\d*\./, "");
+  const path = parsed.pathname.replace(/^\/+|\/+$/g, "");
 
   try {
-    const { slug, episode } = parseJkUrl(rawUrl);
+    let records = [];
     let kind = String(payload?.kind || "").trim();
-    if (!kind) kind = episode ? "episode" : slug ? "anime" : "site";
 
-    let records;
-    if (episode && slug) {
-      const e = await fetchJkanimeEpisode(slug, episode);
-      records = e ? [e] : [];
-      kind = "episode";
-    } else if (slug) {
-      records = await crawlJkanimeAnime(slug);
-      kind = "anime";
+    if (/jkanime\.net/i.test(parsed.host)) {
+      // Dedicated jkanime adapter (its episode URLs are /<slug>/<num>).
+      const { slug, episode } = parseJkUrl(rawUrl);
+      if (episode && slug) { const e = await fetchJkanimeEpisode(slug, episode); records = e ? [e] : []; kind = "episode"; }
+      else if (slug) { records = await crawlJkanimeAnime(slug); kind = "anime"; }
+      else { records = await crawlJkanimeSite(); kind = "site"; }
+    } else if (/animeflv\.net/i.test(parsed.host)) {
+      const afBase = animeFlvBase(rawUrl);
+      const ver = path.match(/^ver\/(.+?)-(\d+)$/i);
+      const an = path.match(/^anime\/([a-z0-9-]+)/i);
+      if (ver) { const e = await fetchGenericEpisode(`${afBase}/ver/${ver[1]}-${ver[2]}`, { key: ver[1], episode: Number(ver[2]) }); records = e ? [e] : []; kind = "episode"; }
+      else if (an) { records = await crawlAnimeFlvAnime(afBase, an[1]); kind = "anime"; }
+      else { records = await crawlGenericSite(afBase); kind = "site"; }
     } else {
-      records = await crawlJkanimeSite();
-      kind = "site";
+      // Generic: figure out any site.
+      if (!kind) kind = !path ? "site" : looksLikeEpisodeUrl(path) ? "episode" : "anime";
+      if (kind === "episode") { const e = await fetchGenericEpisode(rawUrl); records = e ? [e] : []; }
+      else if (kind === "anime") { records = await crawlGenericAnime(rawUrl, base); }
+      else { records = await crawlGenericSite(base); }
     }
 
-    const catalog = buildJkCatalog(records);
+    const catalog = buildCrawlCatalog(records, { source: domain, idPrefix: /jkanime/i.test(domain) ? "jk" : "crawl" });
     const totalEpisodes = catalog.reduce((n, a) => n + a.episodes.length, 0);
     if (!catalog.length) {
-      sendJson(response, { ok: false, error: "Couldn't find playable episodes on jkanime for that link." });
+      sendJson(response, { ok: false, error: `No playable episodes found on ${domain} for that link. Try pasting a specific anime or episode page.` });
       return;
     }
     sendJson(response, {
       ok: true,
-      name: kind === "site" ? "jkanime.net" : (catalog[0]?.title || "jkanime.net"),
+      name: kind === "site" ? domain : (catalog[0]?.title || domain),
       kind,
       catalog,
       totalEpisodes,
