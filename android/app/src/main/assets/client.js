@@ -1266,20 +1266,35 @@ async function liveSearchAniList(query) {
       : (json.media ? [json.media] : []);
     _liveSearchDone.add(q);                 // don't refetch the same query
     if (!results.length || seq !== _liveSearchSeq) return;
-    const known = new Set(state.shows.map((s) => getShowKey(s)));
+    const byKey = new Map(state.shows.map((s) => [getShowKey(s), s]));
     const added = [];
+    let upgraded = false;
     for (const media of results) {
       let show;
       try { show = normalizeAniListShow(media); } catch { continue; }
       const key = getShowKey(show);
-      if (!key || known.has(key)) continue;
-      known.add(key);
+      if (!key) continue;
+      const existing = byKey.get(key);
+      if (existing) {
+        // Repair an entry added earlier while AniList was rate-limited (no art /
+        // description) by filling in the freshly-fetched high-res fields.
+        if (!existing.image && show.image) { existing.image = show.image; upgraded = true; }
+        if (!existing.banner && show.banner) { existing.banner = show.banner; upgraded = true; }
+        if ((!existing.description || existing.description.length < 8) && show.description) { existing.description = show.description; upgraded = true; }
+        continue;
+      }
+      byKey.set(key, show);
       show.fromSearch = true;
       added.push(show);
     }
-    if (added.length) {
-      state.shows = [...state.shows, ...added];
-      if (state.search) render();           // surface the new matches immediately
+    if (added.length) state.shows = [...state.shows, ...added];
+    if ((added.length || upgraded) && state.search) render();   // surface matches immediately
+    if (added.length || upgraded) {
+      if (state.activeShow && getShowKey(state.activeShow)) {
+        // If the open overlay shows one of these, refresh its poster too.
+        const fresh = byKey.get(getShowKey(state.activeShow));
+        if (fresh && !state.activeShow.image && fresh.image) state.activeShow.image = fresh.image;
+      }
     }
   } catch (_) {
     // Offline / rate-limited — keep the local results already shown.
