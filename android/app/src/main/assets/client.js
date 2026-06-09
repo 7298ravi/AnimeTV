@@ -1177,9 +1177,11 @@ function trailerEmbedUrl(trailer) {
 }
 
 let _carouselTrailerMsgHandler = null;
+let _carouselTrailerRevealTimer = null;
 
 function stopCarouselTrailer() {
   if (_carouselTrailerTimer) { window.clearTimeout(_carouselTrailerTimer); _carouselTrailerTimer = null; }
+  if (_carouselTrailerRevealTimer) { window.clearTimeout(_carouselTrailerRevealTimer); _carouselTrailerRevealTimer = null; }
   if (_carouselTrailerMsgHandler) { window.removeEventListener("message", _carouselTrailerMsgHandler); _carouselTrailerMsgHandler = null; }
   if (_carouselTrailerEl) { _carouselTrailerEl.remove(); _carouselTrailerEl = null; }
   carouselStage?.classList.remove("is-trailer-playing");
@@ -1211,10 +1213,16 @@ function scheduleCarouselTrailer(show) {
     wrap.appendChild(frame);
     carouselBackdrop.insertAdjacentElement("afterend", wrap);
     _carouselTrailerEl = wrap;
-    carouselStage.classList.add("is-trailer-playing");
 
-    // Drop the iframe back to the cover image if YouTube refuses to embed it
-    // (onError) — keeps the hero clean instead of showing YouTube's error card.
+    // IMPORTANT: do NOT reveal the iframe yet — a loading YouTube/Dailymotion
+    // iframe paints solid black, and fading that in over the hero is the
+    // "whole screen blinks black" glitch. Keep it invisible (opacity 0) until
+    // the video is actually playing, then fade in.
+    const reveal = () => {
+      if (_carouselTrailerEl !== wrap) return;            // slide changed already
+      carouselStage.classList.add("is-trailer-playing");
+    };
+
     if (trailer.site !== "dailymotion") {
       frame.addEventListener("load", () => {
         try {
@@ -1227,10 +1235,19 @@ function scheduleCarouselTrailer(show) {
         if (typeof e.origin !== "string" || !/youtube\.com|youtube-nocookie\.com/.test(e.origin)) return;
         let data;
         try { data = typeof e.data === "string" ? JSON.parse(e.data) : e.data; } catch { return; }
-        if (data && data.event === "onError") stopCarouselTrailer();
+        if (!data) return;
+        if (data.event === "onError") { stopCarouselTrailer(); return; }
+        // playerState 1 = PLAYING → safe to fade in (real frames are showing).
+        const playerState = data.event === "onStateChange" ? data.info
+          : (data.event === "infoDelivery" ? data.info?.playerState : undefined);
+        if (playerState === 1) reveal();
       };
       window.addEventListener("message", _carouselTrailerMsgHandler);
     }
+
+    // Fallback reveal in case playback events never arrive (Dailymotion, blocked
+    // postMessage, etc.) — by now the iframe has had time to render real frames.
+    _carouselTrailerRevealTimer = window.setTimeout(reveal, 2200);
   }, CAROUSEL_IMAGE_HOLD_MS);
 }
 
@@ -6657,6 +6674,12 @@ function handleSearchInput(event) {
   if (searchInputLibrary && searchInputLibrary !== event.target) searchInputLibrary.value = state.search;
   if (searchInputTop && searchInputTop !== event.target) searchInputTop.value = state.search;
   if (searchInputAniPub && searchInputAniPub !== event.target) searchInputAniPub.value = state.search;
+  // Keep every search box's custom clear (×) button in sync with its value.
+  document.querySelectorAll(".search-box").forEach((box) => {
+    const i = box.querySelector("input");
+    const c = box.querySelector(".search-clear");
+    if (i && c) c.hidden = !i.value;
+  });
   render();
   if (state.route === "home") setRoute(event.target === searchInputAniPub ? "anipub" : "library");
 }
@@ -6671,18 +6694,39 @@ searchInputAniPub?.addEventListener("input", handleSearchInput);
 document.querySelectorAll(".search-box").forEach((box) => {
   const icon = box.querySelector("span:last-child");
   const input = box.querySelector("input");
-  if (!icon || !input) return;
-  icon.setAttribute("role", "button");
-  icon.setAttribute("aria-label", "Search");
-  icon.setAttribute("tabindex", "0");
-  const runSearch = () => {
+  if (!input) return;
+
+  if (icon) {
+    icon.setAttribute("role", "button");
+    icon.setAttribute("aria-label", "Search");
+    icon.setAttribute("tabindex", "0");
+    const runSearch = () => {
+      input.focus();
+      if (input.value.trim()) handleSearchInput({ target: input });
+    };
+    icon.addEventListener("click", (event) => { event.preventDefault(); runSearch(); });
+    icon.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); runSearch(); }
+    });
+  }
+
+  // Cross-browser clear (×) button — Firefox has no ::-webkit-search-cancel-button.
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.className = "search-clear";
+  clearBtn.setAttribute("aria-label", "Clear search");
+  clearBtn.textContent = "✕";
+  clearBtn.hidden = !input.value;
+  clearBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    input.value = "";
+    handleSearchInput({ target: input });
     input.focus();
-    if (input.value.trim()) handleSearchInput({ target: input });
-  };
-  icon.addEventListener("click", (event) => { event.preventDefault(); runSearch(); });
-  icon.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); runSearch(); }
   });
+  input.insertAdjacentElement("afterend", clearBtn);
+  const syncClear = () => { clearBtn.hidden = !input.value; };
+  input.addEventListener("input", syncClear);
+  input.addEventListener("search", syncClear); // Esc / native clear
 });
 
 sidebarToggle?.addEventListener("click", toggleSidebar);
