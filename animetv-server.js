@@ -5454,9 +5454,7 @@ async function crawlJkanimeSite(limit = 18) {
   return records.filter(Boolean);
 }
 
-async function crawlJkanimeAnime(slug, limit = 12) {
-  // Best-effort: episode links present in the static anime page (jkanime paginates
-  // the rest via AJAX). Resolve embeds for the most recent ones, newest first.
+async function crawlJkanimeAnime(slug, cap = HOSTED_RUNTIME ? 26 : 60) {
   const r = await fetchWithTimeout(`${JK_BASE}/${encodeURIComponent(slug)}/`, { headers: JK_HEADERS }, HOSTED_RUNTIME ? 8000 : 12000);
   if (!r.ok) throw new Error(`jkanime anime page HTTP ${r.status}`);
   const html = await r.text();
@@ -5465,9 +5463,22 @@ async function crawlJkanimeAnime(slug, limit = 12) {
   for (const m of html.matchAll(new RegExp(`href="https://jkanime\\.net/${slug}/(\\d+)/?"`, "g"))) {
     nums.add(Number(m[1]));
   }
-  const episodes = [...nums].sort((a, b) => b - a).slice(0, limit);
-  if (!episodes.length) throw new Error("No episodes found on the anime page.");
-  const records = await mapLimit(episodes, 5, (ep) => fetchJkanimeEpisode(slug, ep).catch(() => null));
+  if (!nums.size) throw new Error("No episodes found on the anime page.");
+
+  let episodes;
+  if (nums.size <= 2) {
+    // jkanime statically links only the latest episode; for a sequential anime
+    // that number IS the episode count, so rebuild the full 1..latest range
+    // (newest first, capped) instead of importing a single episode.
+    const latest = Math.max(...nums);
+    const start = Math.max(1, latest - cap + 1);
+    episodes = [];
+    for (let e = latest; e >= start; e--) episodes.push(e);
+  } else {
+    episodes = [...nums].sort((a, b) => b - a).slice(0, cap);
+  }
+
+  const records = await mapLimit(episodes, 6, (ep) => fetchJkanimeEpisode(slug, ep).catch(() => null));
   return records.filter(Boolean);
 }
 
