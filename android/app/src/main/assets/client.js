@@ -1607,9 +1607,21 @@ function buildStableCarouselItems(pool) {
   return ordered;
 }
 
+// Hero backdrop: prefer a dedicated landscape banner, fall back to the poster so
+// the carousel still shows real artwork when banners are missing.
+function carouselArtworkOrPoster(show = {}) {
+  return getCarouselArtwork(show) || String(show.image || show.poster || show.cover || "").trim();
+}
+
 function renderCarousel() {
   // On-air / recently-aired pool only (these already have landscape artwork).
-  const pool = recentlyAiredShows(24).filter((s) => getCarouselArtwork(s));
+  let pool = recentlyAiredShows(24).filter((s) => getCarouselArtwork(s));
+  // Resilience: if nothing has a landscape banner yet (slow/rate-limited load),
+  // fall back to the best poster-bearing shows so the hero never gets stuck on
+  // "Loading…" while the catalog actually has content.
+  if (!pool.length) {
+    pool = sortCarouselQuality(state.shows.filter((s) => carouselArtworkOrPoster(s))).slice(0, 12);
+  }
   // Kick off trailer lookups for the pool; re-renders when they resolve.
   ensureCarouselTrailers(pool);
   // Stable line-up so the hero doesn't reshuffle/blink when trailers or airing
@@ -1642,14 +1654,14 @@ function renderCarousel() {
   if (String(show.id || "") === _carouselPaintedId) return;
   _carouselPaintedId = String(show.id || "");
 
-  const art = getCarouselArtwork(show);
+  const art = carouselArtworkOrPoster(show);
   carouselBackdrop.classList.toggle("has-banner", Boolean(art));
   carouselBackdrop.style.backgroundImage = art
     ? `url("${art}")`
     : "linear-gradient(135deg, #121733 0%, #1b1a3b 38%, #0b2637 100%)";
   carouselTitle.textContent = getShowTitle(show);
   carouselText.textContent = simpleCarouselText(show);
-  carouselMeta.textContent = [show.day, show.time, show.genre.toUpperCase()].filter(Boolean).join(" | ");
+  carouselMeta.textContent = [show.day, show.time, (show.genre || "").toUpperCase()].filter(Boolean).join(" | ");
   const target = getCardTarget(show);
   carouselOpen.dataset.openShow = String(show.id || "");
   carouselOpen.dataset.openSeason = String(target.seasonNumber || "");
@@ -1663,7 +1675,7 @@ function renderCarouselIndicators(items) {
   if (!carouselIndicators) return;
   carouselIndicators.innerHTML = items.slice(0, 8).map((show, index) => `
     <button class="carousel-dot focusable ${index === state.carouselIndex ? "is-selected" : ""}" data-carousel-index="${index}" aria-label="Show ${escapeHtml(getShowTitle(show))}">
-      ${getCarouselArtwork(show) ? `<img src="${getCarouselArtwork(show)}" alt="">` : "<span></span>"}
+      ${carouselArtworkOrPoster(show) ? `<img src="${carouselArtworkOrPoster(show)}" alt="">` : "<span></span>"}
     </button>
   `).join("");
 
@@ -1684,6 +1696,28 @@ function simpleCarouselText(show) {
   // Word-safe truncation (no mid-word cuts like "...No").
   return cleanDescription(clean, 150);
 }
+
+// Never show a broken-image icon. When a poster/backdrop/watch image fails to
+// load (404, hotlink-blocked, stale URL), hide it so the card's colour gradient
+// shows through, and drop a clean placeholder into the watch overlay. Uses the
+// capture phase because `error` events don't bubble.
+document.addEventListener("error", (event) => {
+  const img = event.target;
+  if (!(img instanceof HTMLImageElement) || img.dataset.imgFallback) return;
+  img.dataset.imgFallback = "1";
+  if (img.classList.contains("watch-poster")) {
+    img.style.display = "none";
+    const wrap = img.closest(".watch-ready-poster-wrap");
+    if (wrap && !wrap.querySelector(".watch-poster-placeholder")) {
+      const ph = document.createElement("div");
+      ph.className = "watch-poster-placeholder";
+      ph.innerHTML = '<div class="play-symbol" aria-hidden="true"></div>';
+      wrap.appendChild(ph);
+    }
+  } else if (img.classList.contains("thumb-poster") || img.classList.contains("thumb-backdrop") || img.closest(".carousel-dot")) {
+    img.style.visibility = "hidden";   // reveal the card's gradient placeholder
+  }
+}, true);
 
 function moveCarousel(step) {
   state.carouselIndex += step;
