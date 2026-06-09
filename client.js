@@ -1236,6 +1236,56 @@ function matchesShowSearch(show) {
   return query.split(" ").every((token) => haystack.includes(token));
 }
 
+// ── Live AniList search ───────────────────────────────────────────────────────
+// The local catalog only holds ~trending shows, so searching for anything niche
+// (e.g. "Super no Ura de Yani Suu Futari") finds nothing. When the user types a
+// query we also ask AniList directly and fold any new matches into the catalog so
+// they show up as openable, favouritable cards — letting the user add ANY anime.
+let _liveSearchTimer = null;
+let _liveSearchSeq = 0;
+const _liveSearchDone = new Set(); // queries already fetched this session
+
+function queueLiveSearch(query) {
+  const q = normalizeSearchText(query);
+  if (q.length < 3 || _liveSearchDone.has(q)) return;
+  clearTimeout(_liveSearchTimer);
+  _liveSearchTimer = window.setTimeout(() => liveSearchAniList(query), 350);
+}
+
+async function liveSearchAniList(query) {
+  const raw = String(query || "").trim();
+  const q = normalizeSearchText(raw);
+  if (q.length < 3 || _liveSearchDone.has(q)) return;
+  const seq = ++_liveSearchSeq;
+  try {
+    const res = await fetchWithTimeout(`./api/anilist/search?q=${encodeURIComponent(raw)}`, { cache: "no-store" }, 9000);
+    if (!res.ok) return;
+    const json = await res.json();
+    const results = Array.isArray(json.results) && json.results.length
+      ? json.results
+      : (json.media ? [json.media] : []);
+    _liveSearchDone.add(q);                 // don't refetch the same query
+    if (!results.length || seq !== _liveSearchSeq) return;
+    const known = new Set(state.shows.map((s) => getShowKey(s)));
+    const added = [];
+    for (const media of results) {
+      let show;
+      try { show = normalizeAniListShow(media); } catch { continue; }
+      const key = getShowKey(show);
+      if (!key || known.has(key)) continue;
+      known.add(key);
+      show.fromSearch = true;
+      added.push(show);
+    }
+    if (added.length) {
+      state.shows = [...state.shows, ...added];
+      if (state.search) render();           // surface the new matches immediately
+    }
+  } catch (_) {
+    // Offline / rate-limited — keep the local results already shown.
+  }
+}
+
 /**
  * Absolute timestamp (ms) of when a show's most-recently-released episode aired,
  * or null if the show has no usable airing signal / nothing has aired yet.
@@ -7283,6 +7333,9 @@ function handleSearchInput(event) {
     if (i && c) c.hidden = !i.value;
   });
   render();
+  // Also search AniList directly so niche titles not in the local catalog still
+  // turn up (debounced; folds new matches into the catalog as openable cards).
+  if (event.target !== searchInputAniPub) queueLiveSearch(state.search);
   // Only jump to the results tab when there's actually something to search for.
   // Clearing the home search (× button / deleting the text) must NOT bounce the
   // user to an empty Library — they stay on Home.
