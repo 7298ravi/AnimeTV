@@ -4763,124 +4763,192 @@ function renderRichMetadata(show = {}, seasons = []) {
   `;
 }
 
+// Episode title without the redundant "Episode N" when that's all there is.
+function episodeEntryTitle(episode = {}, index = 0) {
+  const raw = String(episode.title || "").trim();
+  const num = episode.episode || index + 1;
+  if (raw && !/^(episode|ep|cap[ií]tulo)\s*\d+$/i.test(raw)) return raw;
+  return `Episode ${num}`;
+}
+
+// Human air date ("May 25, 2026") from whatever date field the source provides.
+function episodeAirDateLabel(episode = {}) {
+  const dv = episode.airingAt || episode.releaseDate || episode.availableAt ||
+             episode.airDate || episode.date || episode.aired || episode.released;
+  if (!dv) return "";
+  let ms;
+  if (typeof dv === "number" || /^\d+$/.test(String(dv))) {
+    const n = Number(dv);
+    ms = n < 100000000000 ? n * 1000 : n; // seconds → ms
+  } else {
+    ms = Date.parse(dv);
+  }
+  if (!ms || Number.isNaN(ms)) return "";
+  return new Date(ms).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+}
+
+function episodeThumb(episode = {}, season = {}, show = {}) {
+  return episode.image || episode.thumbnail || episode.still || episode.snapshot ||
+         season.image || show.image || show.banner || "";
+}
+
+// Linear list of seasons for the dropdown + Prev/Next, spanning the franchise
+// (so split seasons like Iruma Temporada 1–4 appear together). Each entry knows
+// how to navigate: a related show opens it; an own season just switches index.
+function buildSeasonNav(show, seasons) {
+  const franchise = getFranchiseSeasonList(show) || [];
+  const list = (franchise.length ? franchise : seasons).map((entry, i) => {
+    const related = entry.relatedShowId && !entry.isCurrentShow ? String(entry.relatedShowId) : "";
+    let localIndex = -1;
+    if (!related) {
+      localIndex = seasons.indexOf(entry);
+      if (localIndex < 0) localIndex = seasons.findIndex((s) => Number(s.season) === Number(entry.season));
+      if (localIndex < 0 && !franchise.length) localIndex = i;
+    }
+    // Dropdown reads cleanest as "Season N" (the full title lives on the left);
+    // movies/OVAs keep their own name.
+    const label = entry.formatBadge
+      ? (entry.title || entry.formatBadge)
+      : `Season ${entry.season || i + 1}`;
+    return {
+      label,
+      epCount: entry.episodes?.length || 0,
+      badge: entry.formatBadge || "",
+      relatedShowId: related,
+      localIndex
+    };
+  });
+  return list.length ? list : seasons.map((s, i) => ({
+    label: s.title || `Season ${s.season || i + 1}`, epCount: s.episodes.length, badge: "", relatedShowId: "", localIndex: i
+  }));
+}
+
 function renderEpisodeList(show) {
   if (!episodeList) return;
   const seasons = getDetailSeasons(show);
-  const franchiseSeasons = getFranchiseSeasonList(show);
   if (state.activeSeasonIndex >= seasons.length) state.activeSeasonIndex = 0;
   const activeSeason = seasons[state.activeSeasonIndex] || seasons[0];
   const seasonTitle = getSeasonDisplayTitle(show, activeSeason);
   syncWatchHeading(show, activeSeason);
 
+  const seasonNav = buildSeasonNav(show, seasons);
+  let activeNavIndex = seasonNav.findIndex((s) => s.localIndex === state.activeSeasonIndex);
+  if (activeNavIndex < 0) activeNavIndex = 0;
+  const activeNav = seasonNav[activeNavIndex] || { label: activeSeason?.title || "Season 1" };
+  const multiSeason = seasonNav.length > 1;
+
+  const episodes = activeSeason?.episodes || [];
+
   episodeList.hidden = false;
   episodeList.innerHTML = `
-    <div class="detail-tabs" role="tablist" aria-label="Anime details">
-      ${["anime", "seasons", "episodes"].map((tab) => `
-        <button class="detail-tab focusable ${state.activeDetailTab === tab ? "is-selected" : ""}" data-detail-tab="${tab}" role="tab">
-          ${tab === "anime" ? "Anime" : tab === "seasons" ? "Seasons" : "Episodes"}
+    <div class="ep-panel-head">
+      <button class="ep-nav-btn focusable" data-season-step="-1" ${activeNavIndex <= 0 ? "disabled" : ""} aria-label="Previous season">
+        <span aria-hidden="true">‹</span><span class="ep-nav-label">Prev</span>
+      </button>
+      <div class="ep-season-select">
+        <button class="ep-season-btn focusable" data-season-toggle type="button" aria-haspopup="listbox" aria-expanded="false">
+          <span class="ep-season-name">${escapeHtml(activeNav.label)}</span>
+          <span class="ep-season-caret" aria-hidden="true">▾</span>
         </button>
-      `).join("")}
-    </div>
-
-    <section class="detail-pane ${state.activeDetailTab === "anime" ? "is-active" : ""}" data-detail-pane="anime">
-      <span>Anime</span>
-      <div class="anime-detail-card">
-        ${show.image ? `<img class="anime-detail-poster" src="${show.image}" alt="">` : ""}
-        <div>
-          <h3>${seasonTitle}</h3>
-          <p>${compactMetadataLine(show)}</p>
-          ${renderRichMetadata(show, seasons)}
-          <p>${show.description}</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="detail-pane ${state.activeDetailTab === "seasons" ? "is-active" : ""}" data-detail-pane="seasons">
-      <span>Seasons</span>
-      <div class="season-tab-list">
-        ${franchiseSeasons.map((season, seasonIndex) => {
-          // Only regular TV seasons appear as tabs — Movies/OVAs/Specials are cards only
-          if (season.formatBadge) return "";
-          return `
-          <button class="season-tab focusable ${season.isCurrentShow ? "is-selected" : ""}" data-season-tab="${seasonIndex}" ${season.relatedShowId ? `data-related-show-id="${escapeHtml(season.relatedShowId)}"` : ""}>
-            ${escapeHtml(season.title || `Season ${season.season || seasonIndex + 1}`)}
-            <small>${season.episodes.length} eps</small>
-          </button>`;
-        }).join("")}
-      </div>
-      <div class="season-card-grid">
-        ${franchiseSeasons.map((season, seasonIndex) => {
-          const epCount = season.episodes.length;
-          const badge = season.formatBadge ? `<span class="season-format-badge">${escapeHtml(season.formatBadge)}</span>` : "";
-          const year = season.year ? `<span class="season-year">${season.year}</span>` : "";
-          const epLabel = epCount ? `${epCount} episode${epCount === 1 ? "" : "s"}` : "";
-          return `
-          <button class="season-card focusable ${season.isCurrentShow ? "is-selected" : ""}" data-season-card="${seasonIndex}" ${season.relatedShowId ? `data-related-show-id="${escapeHtml(season.relatedShowId)}"` : ""}>
-            ${season.image ? `<img src="${season.image}" alt="">` : ""}
-            <strong>${escapeHtml(season.title || `Season ${season.season || seasonIndex + 1}`)}</strong>
-            <small>${escapeHtml(season.sourceTitle || getSeasonDisplayTitle(show, season))}</small>
-            <span>${epLabel}${badge}${year}</span>
-          </button>`;
-        }).join("")}
-      </div>
-    </section>
-
-    <section class="detail-pane ${state.activeDetailTab === "episodes" ? "is-active" : ""}" data-detail-pane="episodes">
-      <span>Episodes</span>
-      <div class="season-tab-list">
-        ${seasons.map((season, seasonIndex) => `
-          <button class="season-tab focusable ${state.activeSeasonIndex === seasonIndex ? "is-selected" : ""}" data-season-tab="${seasonIndex}">
-            ${season.title || `Season ${season.season || seasonIndex + 1}`}
-            <small>${season.episodes.length} eps</small>
-          </button>
-        `).join("")}
-      </div>
-      <section class="season-block ${activeSeason?.playable ? "" : "is-empty"}">
-        <div class="season-head">
-          ${activeSeason?.image ? `<img class="season-poster-mini" src="${activeSeason.image}" alt="">` : ""}
-          <div class="season-copy">
-            <h3>${activeSeason?.title || "Season 1"}</h3>
-            <p>${seasonTitle}</p>
-          </div>
-          <span class="season-count">${activeSeason?.episodes.length || 0} episode${activeSeason?.episodes.length === 1 ? "" : "s"}</span>
-        </div>
-        ${activeSeason?.playable ? "" : `<p class="episode-empty">Episodes are listed from metadata. Playback servers load when a matching source is available.</p>`}
-        <div class="episode-buttons">
-          ${(activeSeason?.episodes || []).map((episode, episodeIndex) => `
-            <button class="episode-button focusable ${isEpisodeUnavailable(episode) ? "is-locked" : ""} ${isActiveEpisode(state.activeSeasonIndex, episodeIndex) ? "is-selected" : ""}" data-season-index="${state.activeSeasonIndex}" data-episode-index="${episodeIndex}">
-              <strong>${episode.episode || episodeIndex + 1}</strong>
-              <small>${episodeDisplaySubtitle(episode)}</small>
+        ${multiSeason ? `
+        <div class="ep-season-menu" role="listbox" hidden>
+          ${seasonNav.map((s, i) => `
+            <button class="ep-season-option focusable ${i === activeNavIndex ? "is-selected" : ""}" role="option" data-season-nav="${i}" type="button">
+              <span>${escapeHtml(s.label)}</span>
+              <small>${s.badge ? escapeHtml(s.badge) : `${s.epCount} eps`}</small>
             </button>
           `).join("")}
-        </div>
-      </section>
-    </section>
+        </div>` : ""}
+      </div>
+      <button class="ep-nav-btn focusable" data-season-step="1" ${activeNavIndex >= seasonNav.length - 1 ? "disabled" : ""} aria-label="Next season">
+        <span class="ep-nav-label">Next</span><span aria-hidden="true">›</span>
+      </button>
+    </div>
+
+    ${window.ZenkaiNative ? "" : `
+    <label class="ep-search">
+      <input class="ep-search-input focusable" id="epSearchInput" type="search" placeholder="search videos" autocomplete="off" aria-label="Search episodes">
+      <span class="ep-search-icon" aria-hidden="true">⌕</span>
+    </label>`}
+
+    <div class="ep-rows" id="epRows">
+      ${episodes.length ? episodes.map((episode, episodeIndex) => {
+        const num = episode.episode || episodeIndex + 1;
+        const title = episodeEntryTitle(episode, episodeIndex);
+        const thumb = episodeThumb(episode, activeSeason, show);
+        const date = episodeAirDateLabel(episode);
+        const locked = isEpisodeUnavailable(episode);
+        const selected = isActiveEpisode(state.activeSeasonIndex, episodeIndex);
+        const metaLine = date || episodeDisplaySubtitle(episode);
+        const search = `${num} ${title}`.toLowerCase();
+        return `
+        <button class="ep-row focusable ${locked ? "is-locked" : ""} ${selected ? "is-selected" : ""}"
+                data-season-index="${state.activeSeasonIndex}" data-episode-index="${episodeIndex}"
+                data-ep-search="${escapeHtml(search)}">
+          <span class="ep-thumb">
+            ${thumb ? `<img class="ep-thumb-img" src="${escapeHtml(thumb)}" alt="" loading="lazy" onerror="this.style.display='none'">` : ""}
+            <span class="ep-thumb-num">${escapeHtml(String(num))}</span>
+            <span class="ep-thumb-play" aria-hidden="true">▶</span>
+          </span>
+          <span class="ep-row-body">
+            <strong class="ep-row-title">${escapeHtml(String(num))}. ${escapeHtml(title)}</strong>
+            <small class="ep-row-meta">${escapeHtml(metaLine)}</small>
+          </span>
+        </button>`;
+      }).join("") : `
+        <p class="ep-empty">${activeSeason?.playable === false
+          ? "Episodes are listed from metadata. Playback servers load when a matching source is available."
+          : "No episodes found for this season yet."}</p>`}
+    </div>
   `;
 
-  episodeList.querySelectorAll("[data-detail-tab]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.activeDetailTab = button.dataset.detailTab;
-      renderEpisodeList(show);
+  // ── Season dropdown toggle ──────────────────────────────────────────────
+  const seasonBtn = episodeList.querySelector("[data-season-toggle]");
+  const seasonMenu = episodeList.querySelector(".ep-season-menu");
+  if (seasonBtn && seasonMenu) {
+    seasonBtn.addEventListener("click", () => {
+      const open = seasonMenu.hidden;
+      seasonMenu.hidden = !open;
+      seasonBtn.setAttribute("aria-expanded", open ? "true" : "false");
       refreshFocusables();
+      if (open) episodeList.querySelector(".ep-season-option")?.focus?.();
+    });
+  }
+
+  const navTo = (navIndex) => {
+    const target = seasonNav[navIndex];
+    if (!target) return;
+    if (target.relatedShowId) { openShow(target.relatedShowId); return; }
+    state.activeSeasonIndex = Math.max(0, target.localIndex);
+    state.activeEpisode = null;
+    state.activeEpisodeUrl = "";
+    renderEpisodeList(show);
+    resetVideoFrame();
+    refreshFocusables();
+  };
+
+  episodeList.querySelectorAll("[data-season-nav]").forEach((option) => {
+    option.addEventListener("click", () => navTo(Number(option.dataset.seasonNav)));
+  });
+  episodeList.querySelectorAll("[data-season-step]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.hasAttribute("disabled")) return;
+      navTo(activeNavIndex + Number(button.dataset.seasonStep));
     });
   });
 
-  episodeList.querySelectorAll("[data-season-tab], [data-season-card]").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (button.dataset.relatedShowId) {
-        openShow(button.dataset.relatedShowId);
-        return;
-      }
-      state.activeSeasonIndex = Number(button.dataset.seasonTab ?? button.dataset.seasonCard);
-      state.activeDetailTab = button.dataset.seasonCard ? "episodes" : state.activeDetailTab;
-      state.activeEpisode = null;
-      state.activeEpisodeUrl = "";
-      renderEpisodeList(show);
-      resetVideoFrame();
-      refreshFocusables();
+  // ── Episode search (filter rows in place, keeps input focus) ─────────────
+  const searchInput = episodeList.querySelector("#epSearchInput");
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      const q = searchInput.value.trim().toLowerCase();
+      episodeList.querySelectorAll(".ep-row").forEach((row) => {
+        row.style.display = !q || (row.dataset.epSearch || "").includes(q) ? "" : "none";
+      });
     });
-  });
+  }
 
+  // ── Episode selection ────────────────────────────────────────────────────
   episodeList.querySelectorAll("[data-season-index][data-episode-index]").forEach((button) => {
     button.addEventListener("click", () => {
       const season = seasons[Number(button.dataset.seasonIndex)];
