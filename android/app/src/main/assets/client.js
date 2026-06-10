@@ -1571,6 +1571,19 @@ async function loadAnimeAv1Latest(force = false) {
   }
 }
 
+// Always serve the highest-resolution variant. AniList encodes the size in the
+// cover URL path, so we can upgrade medium/large thumbnails to extraLarge for free.
+function hqImage(url) {
+  const u = String(url || "").trim();
+  if (!u) return u;
+  if (u.includes("anilist.co") || u.includes("anilistcdn")) {
+    return u
+      .replace("/cover/medium/", "/cover/extraLarge/")
+      .replace("/cover/large/", "/cover/extraLarge/");
+  }
+  return u;
+}
+
 function getCarouselArtwork(show = {}) {
   const poster = String(show.image || show.poster || show.cover || "").trim();
   const candidates = [
@@ -1580,9 +1593,9 @@ function getCarouselArtwork(show = {}) {
     show.wideImage,
     show.landscapeImage
   ];
-  return candidates
+  return hqImage(candidates
     .map((value) => String(value || "").trim())
-    .find((value) => value && value !== poster) || "";
+    .find((value) => value && value !== poster) || "");
 }
 
 // Stable hero line-up. Once a healthy set of featured shows is chosen we keep it
@@ -1921,10 +1934,11 @@ function cardTemplate(show, index = 0) {
   const artStyle = `--thumb-a: ${colors[0]}; --thumb-b: ${colors[1]}`;
   const meta = cardMeta(show, isFavorite);
   const target = getCardTarget(show);
-  const image = show.image
+  const posterUrl = hqImage(show.image);
+  const image = posterUrl
     ? `
-        <img class="thumb-backdrop" src="${escapeHtml(show.image)}" alt="" loading="lazy">
-        <img class="thumb-poster" src="${escapeHtml(show.image)}" alt="" loading="lazy">
+        <img class="thumb-backdrop" src="${escapeHtml(posterUrl)}" alt="" loading="lazy">
+        <img class="thumb-poster" src="${escapeHtml(posterUrl)}" alt="" loading="lazy">
       `
     : "";
   return `
@@ -3929,6 +3943,7 @@ function render() {
     renderCards(latestGrid, buildLatestEpisodesList(HOME_CARD_LIMIT));
     renderCards(libraryGrid, filtered.slice(0, state.search ? SEARCH_CARD_LIMIT : LIBRARY_CARD_LIMIT));
   }
+  renderContinueWatching();
   renderAniPubCatalog();
   renderCards(favoritesGrid, filtered.filter((show) => state.favorites.includes(show.id)));
   const emptyFavorites = document.querySelector("#emptyFavorites");
@@ -4725,7 +4740,7 @@ function syncWatchHeading(show = state.activeShow, season = null) {
   // Cinematic backdrop: prefer a wide banner, fall back to the poster.
   const backdrop = document.querySelector("#watchBackdrop");
   if (backdrop) {
-    const art = getCarouselArtwork(show) || show.banner || show.backdrop || show.image || "";
+    const art = getCarouselArtwork(show) || hqImage(show.banner || show.backdrop || show.image || "");
     backdrop.style.backgroundImage = art ? `url("${art}")` : "";
     backdrop.classList.toggle("has-art", Boolean(art));
     // Always cinematic; .has-art only switches image-backdrop vs gradient fallback.
@@ -4768,8 +4783,8 @@ function episodeAirDateLabel(episode = {}) {
 }
 
 function episodeThumb(episode = {}, season = {}, show = {}) {
-  return episode.image || episode.thumbnail || episode.still || episode.snapshot ||
-         season.image || show.image || show.banner || "";
+  return hqImage(episode.image || episode.thumbnail || episode.still || episode.snapshot ||
+         season.image || show.image || show.banner || "");
 }
 
 // Linear list of seasons for the dropdown + Prev/Next, spanning the franchise
@@ -4860,6 +4875,18 @@ function renderEpisodeList(show) {
         <span class="ep-search-icon" aria-hidden="true">⌕</span>
       </label>`}
 
+      ${(() => {
+        const sNum = activeSeason?.season || state.activeSeasonIndex + 1;
+        const stats = getSeasonStats(show, activeSeason, sNum);
+        if (!stats.total || !stats.watched) return "";
+        return `
+        <div class="ep-stats" aria-label="Season progress">
+          <span class="ep-stats-text"><b>${stats.watched}</b>/${stats.total} watched · ${stats.remaining} left</span>
+          <span class="ep-stats-pct">${stats.percent}%</span>
+          <span class="ep-stats-bar"><span style="width:${stats.percent}%"></span></span>
+        </div>`;
+      })()}
+
       <div class="ep-rows" id="epRows">
         ${episodes.length ? episodes.map((episode, episodeIndex) => {
           const num = episode.episode || episodeIndex + 1;
@@ -4870,19 +4897,32 @@ function renderEpisodeList(show) {
           const selected = isActiveEpisode(state.activeSeasonIndex, episodeIndex);
           const metaLine = date || episodeDisplaySubtitle(episode);
           const search = `${num} ${title}`.toLowerCase();
+          // Local watch state → WATCHED / CONTINUE badge + progress bar.
+          const sNum = activeSeason?.season || state.activeSeasonIndex + 1;
+          const watch = getEpisodeWatchState(show, sNum, num);
+          const pct = watch ? watch.progress : 0;
+          const watchCls = watch?.watched ? "is-watched" : (pct > 0 ? "is-inprogress" : "");
+          const badge = watch?.watched
+            ? `<span class="ep-badge ep-badge-watched">WATCHED</span>`
+            : (pct > 0 ? `<span class="ep-badge ep-badge-continue">CONTINUE</span>` : "");
+          const progressBar = (pct > 0 || watch?.watched)
+            ? `<span class="ep-progress"><span style="width:${watch?.watched ? 100 : pct}%"></span></span>`
+            : "";
           return `
-          <button class="ep-row focusable ${locked ? "is-locked" : ""} ${selected ? "is-selected" : ""}"
+          <button class="ep-row focusable ${locked ? "is-locked" : ""} ${selected ? "is-selected" : ""} ${watchCls}"
                   data-season-index="${state.activeSeasonIndex}" data-episode-index="${episodeIndex}"
                   data-ep-search="${escapeHtml(search)}">
             <span class="ep-thumb">
               ${thumb ? `<img class="ep-thumb-img" src="${escapeHtml(thumb)}" alt="" loading="lazy" onerror="this.style.display='none'">` : ""}
               <span class="ep-thumb-num">${escapeHtml(String(num))}</span>
               <span class="ep-thumb-play" aria-hidden="true">▶</span>
+              ${progressBar}
             </span>
             <span class="ep-row-body">
               <strong class="ep-row-title">${escapeHtml(String(num))}. ${escapeHtml(title)}</strong>
               <small class="ep-row-meta">${escapeHtml(metaLine)}</small>
             </span>
+            ${badge}
           </button>`;
         }).join("") : `
           <p class="ep-empty">${activeSeason?.playable === false
@@ -5900,9 +5940,22 @@ function wirePlayerChrome(frame) {
   });
 }
 
+// Stable per-anime id used for watch tracking (animeId in episodeKey).
+function getAnimeTrackId(show = {}) {
+  return String(show.id || show.anilistId || show.malId || normalizeTitle(show.title) || "anime");
+}
+
+// episodeKey = animeId-season-episode (e.g. "21-1-5"). Kept colon-formatted
+// internally for back-compat with previously saved data.
+function buildWatchKey(show, seasonNumber, episodeNumber) {
+  if (!show) return "";
+  return `${getAnimeTrackId(show)}:s${seasonNumber || 1}:e${episodeNumber || 1}`;
+}
+
 function getWatchKey(show = state.activeShow, episode = state.activeEpisode?.episode) {
   if (!show || !episode) return "";
-  return `${show.id || normalizeTitle(show.title)}:s${episode.season || state.activeEpisode?.season?.season || 1}:e${episode.episode || episode.number || 1}`;
+  const seasonNumber = episode.season || state.activeEpisode?.season?.season || (state.activeSeasonIndex + 1) || 1;
+  return buildWatchKey(show, seasonNumber, episode.episode || episode.number || 1);
 }
 
 function readStoredMap(key) {
@@ -5913,31 +5966,160 @@ function readStoredMap(key) {
   }
 }
 
-function saveWatchProgress(video, episode) {
-  const key = getWatchKey(state.activeShow, episode);
-  if (!key || !Number.isFinite(video.currentTime)) return;
-  const positions = readStoredMap(RESUME_POSITIONS_KEY);
-  positions[key] = {
-    position: Math.floor(video.currentTime),
-    duration: Math.floor(video.duration || 0),
+// In-memory cache of the resume/progress map so reads (badges, stats, continue
+// watching) are cheap and survive metadata refreshes. Loaded once, written through.
+let _watchMapCache = null;
+let _activeProgressPlayer = null;   // { player, episode } for save-on-close
+function getWatchMap() {
+  if (!_watchMapCache) _watchMapCache = readStoredMap(RESUME_POSITIONS_KEY);
+  return _watchMapCache;
+}
+function persistWatchMap() {
+  try { localStorage.setItem(RESUME_POSITIONS_KEY, JSON.stringify(_watchMapCache || {})); } catch { /* quota / disabled */ }
+}
+
+// Single source of truth for writing a progress record. Used by the web <video>,
+// the native Android bridge, and manual mark-watched.
+function recordWatchProgress({ show, season, episode, positionSec, durationSec, episodeTitle, thumb, completed }) {
+  if (!show) return;
+  const seasonNumber = Number(season) || 1;
+  const episodeNumber = Number(episode) || 1;
+  const key = buildWatchKey(show, seasonNumber, episodeNumber);
+  if (!key) return;
+  const map = getWatchMap();
+  const prev = map[key] || {};
+  const dur = Math.floor(durationSec || prev.duration || 0);
+  let pos = Math.max(0, Math.floor(positionSec || 0));
+  let progress = dur > 0 ? Math.min(100, Math.round((pos / dur) * 100)) : (prev.progress || 0);
+  if (completed) { progress = 100; pos = dur || pos; }
+  map[key] = {
+    episodeKey: key,
+    animeId: getAnimeTrackId(show),
+    showId: show.id || null,
+    title: getShowTitle(show) || show.title || prev.title || "",
+    season: seasonNumber,
+    episode: episodeNumber,
+    episodeTitle: episodeTitle || prev.episodeTitle || "",
+    thumb: thumb || prev.thumb || show.image || show.banner || "",
+    poster: show.image || prev.poster || "",
+    progress,
+    lastPosition: pos,
+    position: pos,
+    duration: dur,
+    watched: progress >= 90,
+    lastWatchedAt: Date.now(),
     updatedAt: Date.now()
   };
-  localStorage.setItem(RESUME_POSITIONS_KEY, JSON.stringify(positions));
-  const history = readStoredMap(WATCH_HISTORY_KEY);
-  history[state.activeShow.id || normalizeTitle(state.activeShow.title)] = {
-    showId: state.activeShow.id,
-    title: state.activeShow.title,
-    episode: episode.episode || episode.number,
-    season: episode.season || state.activeEpisode?.season?.season || 1,
-    updatedAt: Date.now()
-  };
-  localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(history));
+  persistWatchMap();
+  scheduleContinueWatchingRefresh();
+}
+
+// Throttled writer wired to the web player's timeupdate (saves ~every 10s);
+// force=true for pause/exit/ended so we never lose the final position.
+function saveWatchProgress(video, episode, opts = {}) {
+  if (!video || !Number.isFinite(video.currentTime)) return;
+  const now = Date.now();
+  if (!opts.force && now - (saveWatchProgress._last || 0) < 9500) return;
+  saveWatchProgress._last = now;
+  const ep = episode || state.activeEpisode?.episode || {};
+  const seasonObj = state.activeEpisode?.season || {};
+  const seasonNumber = ep.season || seasonObj.season || (state.activeSeasonIndex + 1) || 1;
+  recordWatchProgress({
+    show: state.activeShow,
+    season: seasonNumber,
+    episode: ep.episode || ep.number || 1,
+    positionSec: video.currentTime,
+    durationSec: video.duration,
+    episodeTitle: ep.title || "",
+    thumb: episodeThumb(ep, seasonObj, state.activeShow || {}),
+    completed: opts.completed
+  });
 }
 
 function getResumePosition(episode) {
   const key = getWatchKey(state.activeShow, episode);
-  const item = key ? readStoredMap(RESUME_POSITIONS_KEY)[key] : null;
-  return item?.position > 8 ? item.position : 0;
+  const item = key ? getWatchMap()[key] : null;
+  return item?.lastPosition > 8 ? item.lastPosition : 0;
+}
+
+// ── Watch-state readers (badges / stats / continue-watching) ────────────────
+function getEpisodeWatchState(show, seasonNumber, episodeNumber) {
+  const key = buildWatchKey(show, seasonNumber, episodeNumber);
+  return key ? getWatchMap()[key] || null : null;
+}
+
+function getSeasonStats(show, season, seasonNumber) {
+  const episodes = season?.episodes || [];
+  let watched = 0;
+  episodes.forEach((ep, i) => {
+    const st = getEpisodeWatchState(show, seasonNumber, ep.episode || i + 1);
+    if (st?.watched) watched += 1;
+  });
+  const total = episodes.length;
+  return {
+    watched,
+    remaining: Math.max(0, total - watched),
+    total,
+    percent: total ? Math.round((watched / total) * 100) : 0
+  };
+}
+
+// Most-recent in-progress episodes (progress 1–89%), newest first.
+function getContinueWatchingList(limit = 20) {
+  const map = getWatchMap();
+  return Object.values(map)
+    .filter((e) => e && e.progress > 0 && e.progress < 90 && !e.watched)
+    .sort((a, b) => (b.lastWatchedAt || 0) - (a.lastWatchedAt || 0))
+    .slice(0, limit);
+}
+
+let _cwTimer = null;
+function scheduleContinueWatchingRefresh() {
+  if (_cwTimer) return;
+  _cwTimer = setTimeout(() => { _cwTimer = null; renderContinueWatching(); }, 300);
+}
+
+function renderContinueWatching() {
+  const section = document.querySelector("#continueWatching");
+  const grid = document.querySelector("#continueGrid");
+  if (!section || !grid) return;
+  const list = getContinueWatchingList(20);
+  if (!list.length) {
+    section.classList.add("is-hidden");
+    grid.dataset.cardsSig = "";
+    grid.innerHTML = "";
+    return;
+  }
+  section.classList.remove("is-hidden");
+  const sig = list.map((e) => `${e.episodeKey}:${e.progress}`).join("|");
+  if (grid.dataset.cardsSig === sig) return; // skip identical repaint
+  grid.dataset.cardsSig = sig;
+  grid.innerHTML = list.map((e) => {
+    const img = e.thumb || e.poster || "";
+    const sub = `S${e.season}E${e.episode} · ${e.progress}%`;
+    return `
+    <button class="show-card continue-card focusable" type="button"
+            data-continue-key="${escapeHtml(e.episodeKey)}" data-show-id="${escapeHtml(String(e.showId || e.animeId))}">
+      <span class="continue-thumb">
+        ${img ? `<img src="${escapeHtml(img)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : ""}
+        <span class="continue-play" aria-hidden="true">▶</span>
+        <span class="continue-bar"><span style="width:${e.progress}%"></span></span>
+      </span>
+      <strong class="continue-card-title">${escapeHtml(e.title)}</strong>
+      <small class="continue-card-sub">${escapeHtml(sub)}</small>
+    </button>`;
+  }).join("");
+  grid.querySelectorAll("[data-continue-key]").forEach((card) => {
+    card.addEventListener("click", () => resumeFromContinue(card.dataset.showId, card.dataset.continueKey));
+  });
+}
+
+function resumeFromContinue(showId, key) {
+  const m = /:s(\d+):e(\d+)$/.exec(key || "");
+  const seasonNumber = m ? Number(m[1]) : 1;
+  const episodeNumber = m ? Number(m[2]) : 1;
+  if (!showId) return;
+  openShow(showId, { seasonNumber, episodeNumber, playIntent: true });
 }
 
 function isActiveEpisode(seasonIndex, episodeIndex) {
@@ -7040,12 +7222,13 @@ function renderDirectVideoPlayer(frame, url, episode) {
       if (resumeAt < (player.duration || resumeAt + 1) - 5) player.currentTime = resumeAt;
     }, { once: true });
   }
-  player?.addEventListener("timeupdate", () => {
-    if (Math.floor(player.currentTime) % 5 === 0) saveWatchProgress(player, episode);
-  });
-  player?.addEventListener("pause", () => saveWatchProgress(player, episode));
+  // Progress is saved ~every 10s while playing (self-throttled), and forced on
+  // pause / exit / completion so the resume point is never lost.
+  player?.addEventListener("timeupdate", () => saveWatchProgress(player, episode));
+  player?.addEventListener("pause", () => saveWatchProgress(player, episode, { force: true }));
+  if (player) _activeProgressPlayer = { player, episode };
   player?.addEventListener("ended", () => {
-    saveWatchProgress(player, episode);
+    saveWatchProgress(player, episode, { force: true, completed: true });
     const nav = getEpisodeNavigationTargets();
     if (!nav.next) {
       showToast("You've reached the last episode.");
@@ -7835,6 +8018,16 @@ fullscreenToggle?.addEventListener("click", toggleNativeFullscreen);
       fullscreenToggle.classList.add("fs-pulse");
       window.setTimeout(() => fullscreenToggle.classList.remove("fs-pulse"), 480);
     }
+  })
+);
+
+// Flush the current playback position when the tab is hidden or the app closes,
+// so an abrupt exit (TV home button, tab close) still records where you were.
+["pagehide", "visibilitychange"].forEach((evt) =>
+  window.addEventListener(evt, () => {
+    if (evt === "visibilitychange" && document.visibilityState !== "hidden") return;
+    const ctx = _activeProgressPlayer;
+    if (ctx?.player) saveWatchProgress(ctx.player, ctx.episode, { force: true });
   })
 );
 

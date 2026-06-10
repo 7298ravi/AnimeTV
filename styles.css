@@ -7155,7 +7155,7 @@ body.reduce-motion .watch-stage-body { animation: none; }
      the panel (over the backdrop), not inside the episode list. */
   margin: clamp(3.6rem, 7vh, 4.8rem) 0 0;
   padding: 0.9rem 0.7rem 0.9rem 0.9rem;
-  background: linear-gradient(180deg, rgba(15, 16, 27, 0.82), rgba(8, 9, 17, 0.92));
+  background: linear-gradient(180deg, rgba(12, 13, 22, 0.97), rgba(8, 9, 17, 0.99));
   border: 0.08rem solid rgba(255,255,255,0.08);
   border-right: 0;
   border-radius: 1.1rem 0 0 1.1rem;
@@ -7177,15 +7177,23 @@ body.reduce-motion .watch-stage-body { animation: none; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   position: sticky;
   top: 0;
-  z-index: 5;
-  margin: 0 0 0.7rem;
-  padding-bottom: 0.5rem;
-  background: linear-gradient(180deg, rgba(11,12,21,0.98) 72%, rgba(11,12,21,0));
+  z-index: 7;
+  /* Solid (opaque) so scrolling episodes never bleed through the sticky header. */
+  margin: 0;
+  padding: 0.1rem 0 0.6rem;
+  background: #0c0d16;
 }
 .watch-side .detail-pane { display: none; }
 .watch-side .detail-pane.is-active { display: flex; flex-direction: column; min-height: 0; }
-/* When tabs are sticky, the season-nav header sits just below them. */
-.watch-side .detail-pane .ep-panel-head { top: 3rem; }
+/* Season-nav header sticks just under the tabs, tucked up slightly so there is
+   never a transparent seam between the two sticky bands. */
+.watch-side .detail-pane .ep-panel-head {
+  top: 2.55rem;
+  z-index: 6;
+  margin-top: -0.35rem;
+  padding-top: 0.45rem;
+  background: #0c0d16;
+}
 /* Season cards fit the narrow panel. */
 .watch-side .season-card-grid {
   display: grid;
@@ -7281,7 +7289,7 @@ body.has-embedded-player .watch-side {
   gap: 0.4rem;
   padding: 0.4rem 0.2rem 0.7rem;
   margin: 0 -0.1rem;
-  background: linear-gradient(180deg, rgba(10,11,20,0.98) 70%, rgba(10,11,20,0));
+  background: #0c0d16;
 }
 .ep-nav-btn {
   display: inline-flex;
@@ -7547,6 +7555,104 @@ body.is-tv .watch-overlay.cinematic { background: #06060d; }
 body.is-tv .watch-side {
   background: linear-gradient(180deg, rgba(13, 14, 24, 0.97), rgba(8, 9, 17, 0.99));
 }
-body.is-tv .fs-toggle { background: rgba(20, 21, 34, 0.94); }
+/* The native TV app is already fullscreen — hide the (non-working there) button. */
+body.is-tv .fs-toggle { display: none !important; }
 body.is-tv .icon-action { background: rgba(24, 25, 40, 0.92); }
 body.is-tv .ep-season-menu { background: rgba(18, 19, 32, 1); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Watch tracking — WATCHED/CONTINUE badges, progress bars, season stats,
+   Continue Watching rail. (Local-only; layered onto the existing UI.)
+   ══════════════════════════════════════════════════════════════════════════ */
+.ep-row { position: relative; }
+.ep-row.is-watched { opacity: 0.72; }
+.ep-row.is-watched .ep-row-title { color: rgba(236, 238, 250, 0.7); }
+
+.ep-badge {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.55rem;
+  padding: 0.12rem 0.42rem;
+  border-radius: 0.35rem;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  pointer-events: none;
+}
+.ep-badge-watched { background: rgba(46, 204, 130, 0.92); color: #04130c; }
+.ep-badge-continue { background: var(--accent, #8a5cff); color: #fff; }
+
+/* Thin progress bar pinned to the bottom of the episode thumbnail. */
+.ep-progress {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 0.28rem;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 2;
+}
+.ep-progress > span { display: block; height: 100%; background: var(--accent, #8a5cff); }
+.ep-row.is-watched .ep-progress > span { background: #2ecc82; }
+
+/* Season completion line. */
+.ep-stats {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  margin: 0 0.1rem 0.7rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(226, 228, 242, 0.85);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.ep-stats-text b { color: #fff; }
+.ep-stats-pct { color: var(--accent, #8a5cff); font-weight: 900; }
+.ep-stats-bar { grid-column: 1 / -1; height: 0.3rem; border-radius: 999rem; background: rgba(255,255,255,0.1); overflow: hidden; }
+.ep-stats-bar > span { display: block; height: 100%; background: var(--accent, #8a5cff); border-radius: inherit; }
+
+/* Continue Watching rail (landscape cards with a resume bar). */
+.section-heading .continue-dot { background: var(--accent, #8a5cff); }
+.continue-card {
+  width: clamp(13rem, 22vw, 16rem);
+  text-align: left;
+}
+.continue-thumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  border-radius: 0.7rem;
+  overflow: hidden;
+  background: linear-gradient(135deg, #1b1d2e, #11121d);
+}
+.continue-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.continue-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 1.5rem;
+  color: #fff;
+  background: rgba(6, 6, 14, 0.28);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.continue-card:is(:hover, :focus-visible, .is-tv-focused) .continue-play { opacity: 1; }
+.continue-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 0.32rem; background: rgba(0,0,0,0.55); }
+.continue-bar > span { display: block; height: 100%; background: var(--accent, #8a5cff); }
+.continue-card-title {
+  display: block;
+  margin: 0.5rem 0 0.1rem;
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.continue-card-sub { color: rgba(220, 222, 238, 0.62); font-size: 0.78rem; font-weight: 600; }
