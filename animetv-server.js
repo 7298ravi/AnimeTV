@@ -5419,15 +5419,21 @@ function buildCrawlCatalog(records, opts = {}) {
     }
     if (!entry.image && e.image) entry.image = e.image;
     if ((!entry.title || /^[a-z0-9 ]+$/i.test(entry.title)) && e.title) entry.title = entry.romajiTitle = e.title;
+    const isDirect = (u) => /\.(m3u8|mp4|webm|m4v)(\?|#|$)/i.test(String(u));
+    const sources = e.embeds.map((x) => {
+      const direct = isDirect(x.url);
+      return { provider: x.provider, url: x.url, externalUrl: direct ? "" : x.url, videoUrl: direct ? x.url : "", type: direct ? "direct" : "iframe", siteUrl: e.episodeUrl };
+    });
+    const primary = sources[0];
     entry.episodes.push({
       episode: e.episode,
       season: 1,
       title: `Episodio ${e.episode}`,
-      videoUrl: e.embeds[0].url,
-      externalUrl: e.embeds[0].url,
-      type: "iframe",
+      videoUrl: primary.videoUrl,
+      externalUrl: primary.externalUrl,
+      type: primary.type,
       siteUrl: e.episodeUrl,
-      sources: e.embeds.map((x) => ({ provider: x.provider, url: x.url, externalUrl: x.url, type: "iframe", siteUrl: e.episodeUrl }))
+      sources
     });
   }
   for (const entry of byKey.values()) {
@@ -5539,6 +5545,7 @@ function extractEmbedUrls(html) {
   }
   const av = html.match(/var\s+videos\s*=\s*(\{[\s\S]*?\});/);            // animeflv style
   if (av) { try { for (const arr of Object.values(JSON.parse(av[1]))) for (const s of (arr || [])) if (s && s.code) urls.push(s.code); } catch { /* ignore */ } }
+  for (const m of html.matchAll(/[,{]\s*url:\s*"((?:https?:)?\/\/[^"]+)"/gi)) urls.push(m[1]);   // AnimeAV1 style: server:"X",url:"Y"
   for (const m of html.matchAll(/https?:\/\/[A-Za-z0-9.\-]+\/(?:e|embed|d|v|f|play|video)\/[A-Za-z0-9._\-]+/gi)) urls.push(m[0]);
   return rankCrawlEmbeds(urls);
 }
@@ -5639,6 +5646,56 @@ async function crawlGenericAnime(animeUrl, base, cap = HOSTED_RUNTIME ? 26 : 60)
   return records.filter(Boolean);
 }
 
+// Read an og:<prop> meta value regardless of attribute order.
+function ogMeta(html, prop) {
+  const a = html.match(new RegExp(`<meta[^>]+property=["']og:${prop}["'][^>]*content=["']([^"']+)["']`, "i"));
+  if (a) return a[1];
+  const b = html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:${prop}["']`, "i"));
+  return b ? b[1] : "";
+}
+
+// AnimeAV1 adapter — reuses the tested episode-source resolver so a crawl of
+// animeav1.com/media/<slug> imports the same playable servers the AnimeAV1
+// scraper provides (Streamwish/Mega/HLS/…).
+async function fetchAnimeAv1CrawlEpisode(slug, ep, meta = {}) {
+  const res = await fetchAnimeAv1EpisodeSourcesDirect(slug, ep, "ALL").catch(() => null);
+  if (!res || !res.sources?.length) return null;
+  const embeds = [];
+  const seen = new Set();
+  for (const s of res.sources) {
+    const url = s.videoUrl || s.externalUrl || s.url;
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    embeds.push({ provider: s.provider || "AnimeAV1", url });
+  }
+  if (!embeds.length) return null;
+  return { key: slug, slug, episode: Number(ep), title: meta.title || prettifyJkSlug(slug), image: meta.image || "", embeds, episodeUrl: `${ANIMEAV1_BASE}/media/${slug}/${ep}` };
+}
+async function crawlAnimeAv1Anime(slug, cap = HOSTED_RUNTIME ? 24 : 60) {
+  const page = await fetchWithTimeout(`${ANIMEAV1_BASE}/media/${encodeURIComponent(slug)}`, { headers: ANIMEAV1_HEADERS }, HOSTED_RUNTIME ? 8000 : 12000);
+  if (!page.ok) throw new Error(`AnimeAV1 anime page HTTP ${page.status}`);
+  const html = await page.text();
+  const nums = [...new Set([...html.matchAll(new RegExp(`/media/${slug}/(\\d+)`, "g"))].map((m) => Number(m[1])))].filter(Boolean);
+  if (!nums.length) throw new Error("No episodes found on the AnimeAV1 page.");
+  const meta = {
+    title: decodeHtmlEntities(ogMeta(html, "title") || (html.match(/<h1[^>]*>([^<]+)<\/h1>/i) || [])[1] || prettifyJkSlug(slug))
+      .replace(/\s*[|\-–·»].*$/, "").trim() || prettifyJkSlug(slug),
+    image: ogMeta(html, "image")
+      || (html.match(/name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i) || [])[1]
+      || (html.match(/https?:\/\/cdn\.animeav1\.com\/[^\s"')]+\.(?:jpg|jpeg|png|webp)/i) || [])[0]
+      || ""
+  };
+  const episodes = nums.sort((a, b) => b - a).slice(0, cap);
+  const records = await mapLimit(episodes, 4, (ep) => fetchAnimeAv1CrawlEpisode(slug, ep, meta).catch(() => null));
+  return records.filter(Boolean);
+}
+async function crawlAnimeAv1Site(limit = 18) {
+  const items = await fetchAnimeAv1LatestEpisodes().catch(() => []);
+  const pairs = items.slice(0, limit);
+  const records = await mapLimit(pairs, 4, (it) => fetchAnimeAv1CrawlEpisode(it.slug, it.episode, { title: it.title, image: it.image }).catch(() => null));
+  return records.filter(Boolean);
+}
+
 function looksLikeEpisodeUrl(path) {
   return /\/ver\/|\/watch\/|\/episodio|\/capitulo|\/episode|-\d+$|\/\d+$/i.test(path);
 }
@@ -5673,6 +5730,11 @@ async function handleCrawl(request, response) {
       if (ver) { const e = await fetchGenericEpisode(`${afBase}/ver/${ver[1]}-${ver[2]}`, { key: ver[1], episode: Number(ver[2]) }); records = e ? [e] : []; kind = "episode"; }
       else if (an) { records = await crawlAnimeFlvAnime(afBase, an[1]); kind = "anime"; }
       else { records = await crawlGenericSite(afBase); kind = "site"; }
+    } else if (/animeav1\.com/i.test(parsed.host)) {
+      const m = path.match(/^media\/([a-z0-9-]+)(?:\/(\d+))?/i);
+      if (m && m[2]) { const e = await fetchAnimeAv1CrawlEpisode(m[1], Number(m[2])); records = e ? [e] : []; kind = "episode"; }
+      else if (m) { records = await crawlAnimeAv1Anime(m[1]); kind = "anime"; }
+      else { records = await crawlAnimeAv1Site(); kind = "site"; }
     } else {
       // Generic: figure out any site.
       if (!kind) kind = !path ? "site" : looksLikeEpisodeUrl(path) ? "episode" : "anime";
