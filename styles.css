@@ -6868,85 +6868,370 @@ body.reduce-motion .ss-modal-backdrop,
 body.reduce-motion .ss-modal,
 body.reduce-motion .ss-modal-detect { animation: none; }
 
-/* ── Cinematic detail overlay (Spider-Noir style) ─────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+   Cinematic pre-player / details screen
+   Left = full-bleed backdrop + metadata + actions. Right = source/episode panel.
+   The active player is position:fixed (cinema), so it floats above this layout.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Full-bleed backdrop with a slow parallax zoom. */
 .watch-backdrop {
   position: absolute;
   inset: 0;
   z-index: 0;
   background-size: cover;
-  background-position: center 16%;
+  background-position: center 14%;
   background-repeat: no-repeat;
+  /* Gradient fallback when no artwork is available. */
+  background-color: #0a0b16;
+  background-image:
+    radial-gradient(120% 90% at 80% 0%, rgba(89, 70, 160, 0.55), transparent 60%),
+    radial-gradient(120% 90% at 0% 100%, rgba(34, 40, 90, 0.5), transparent 55%);
   opacity: 0;
-  transform: scale(1.06);
-  transition: opacity 450ms ease, transform 7s ease;
+  transform: scale(1.04);
+  transition: opacity 500ms ease;
   pointer-events: none;
 }
-.watch-backdrop.has-art { opacity: 1; transform: scale(1.01); }
+.watch-overlay:not([hidden]) .watch-backdrop { opacity: 1; }
+.watch-backdrop.has-art {
+  background-color: transparent;
+  animation: watch-backdrop-zoom 26s ease-in-out 600ms both alternate;
+}
+@keyframes watch-backdrop-zoom {
+  from { transform: scale(1.02); }
+  to   { transform: scale(1.12); }
+}
+body.reduce-motion .watch-backdrop,
+body.reduce-motion .watch-backdrop.has-art { animation: none !important; transform: scale(1.02); }
+
+/* Layered scrims: dark left→right behind metadata, bottom→top behind actions,
+   plus a soft fade where the backdrop meets the right source panel. */
 .watch-backdrop::after {
   content: "";
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(7,7,15,0.95) 0%, rgba(7,7,15,0.72) 32%, rgba(7,7,15,0.42) 56%, rgba(7,7,15,0.92) 100%),
-    linear-gradient(0deg, rgba(7,7,15,0.97) 1%, rgba(7,7,15,0.08) 48%, rgba(7,7,15,0.5) 100%);
+    linear-gradient(90deg, rgba(7,7,15,0.94) 0%, rgba(7,7,15,0.7) 30%, rgba(7,7,15,0.34) 52%, rgba(7,7,15,0.2) 70%, rgba(7,7,15,0.74) 100%),
+    linear-gradient(0deg, rgba(6,6,13,0.96) 1%, rgba(7,7,15,0.05) 46%, rgba(7,7,15,0.36) 100%);
 }
 
-/* Cinematic styling applies to the detail view only — not the active player. */
-body:not(.player-cinema-open):not(.has-embedded-player) .watch-overlay.cinematic {
-  background: rgba(5,4,12,0.4);
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
+/* The overlay lets the backdrop dominate (opaque base so nothing bleeds through). */
+.watch-overlay.cinematic {
+  background: #06060d;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   padding: 0;
+  align-items: stretch;
 }
-body:not(.player-cinema-open):not(.has-embedded-player) .watch-overlay.cinematic .watch-panel {
+
+/* Full-screen two-column stage. */
+.watch-overlay.cinematic .watch-panel {
   position: relative;
   z-index: 1;
   width: 100%;
   max-width: none;
   height: 100dvh;
-  grid-template-columns: 1.05fr 0.95fr;
-  gap: clamp(1rem, 3vw, 2.5rem);
-  padding: clamp(1.8rem, 6vh, 4.5rem) clamp(1.4rem, 4vw, 4rem) clamp(1.4rem, 4vh, 3rem);
+  grid-template-columns: minmax(0, 1fr) clamp(21rem, 27vw, 30rem);
+  gap: 0;
+  padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-}
-/* LEFT column: the poster/title float over the backdrop, bottom-aligned. */
-body:not(.player-cinema-open):not(.has-embedded-player) .watch-overlay.cinematic .video-frame {
-  background: transparent !important;
-  padding: 0;
-  place-items: end start;
-  align-content: end;
-}
-body:not(.player-cinema-open):not(.has-embedded-player) .watch-overlay.cinematic .video-frame::before { display: none; }
-body:not(.player-cinema-open):not(.has-embedded-player) .watch-overlay.cinematic .watch-ready-state {
-  background: transparent;
-  align-items: flex-start;
-  text-align: left;
-}
-body:not(.player-cinema-open):not(.has-embedded-player) .watch-overlay.cinematic .watch-ready-poster-wrap {
-  max-width: 15rem;
-  border-radius: 0.9rem;
   overflow: hidden;
-  box-shadow: 0 1.5rem 4rem rgba(0,0,0,0.6);
 }
-/* RIGHT column: a frosted episode/detail panel. */
-body:not(.player-cinema-open):not(.has-embedded-player) .watch-overlay.cinematic .watch-info {
-  background: linear-gradient(180deg, rgba(16,17,28,0.55), rgba(9,10,18,0.88));
-  border: 0.08rem solid rgba(255,255,255,0.08);
-  border-radius: 1rem;
-  padding: 1.2rem 0.85rem 1.2rem 1.2rem;
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 1.5rem 4rem rgba(0,0,0,0.5);
+
+/* Back button — top-left, glassy circle. */
+.watch-overlay.cinematic .close-button {
+  top: clamp(1rem, 2.4vh, 1.8rem);
+  left: clamp(1rem, 2.4vw, 1.8rem);
+  right: auto;
+  width: 2.9rem;
+  height: 2.9rem;
+  font-size: 2rem;
+  background: rgba(12, 12, 22, 0.6);
+  border: 0.08rem solid rgba(255,255,255,0.14);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
 }
-/* Big cinematic title. */
-.watch-overlay.cinematic #watchTitle {
-  font-size: clamp(1.7rem, 3.1vw, 2.9rem);
-  line-height: 1.04;
-  letter-spacing: -0.01em;
+
+/* ── LEFT: cinematic content ─────────────────────────────────────────────── */
+.watch-stage {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-width: 0;
+  min-height: 0;
+  padding: clamp(2rem, 5vh, 4.5rem) clamp(1.6rem, 4vw, 4.5rem) clamp(1.6rem, 5vh, 3.4rem);
+  overflow: hidden;
+}
+.watch-stage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  width: 100%;
+  max-width: 42rem;
+  animation: watch-stage-in 360ms ease both;
+}
+@keyframes watch-stage-in {
+  from { opacity: 0; transform: translateY(1.2rem); }
+  to   { opacity: 1; transform: none; }
+}
+body.reduce-motion .watch-stage-body { animation: none; }
+
+.watch-logo {
+  max-width: min(28rem, 70%);
+  max-height: 9rem;
+  width: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 0.6rem 1.6rem rgba(0,0,0,0.6));
+}
+.watch-overlay.cinematic .watch-title {
+  margin: 0;
+  font-size: clamp(2rem, 4.6vw, 4.2rem);
+  line-height: 1.0;
+  letter-spacing: -0.015em;
   font-weight: 900;
-  text-shadow: 0 0.5rem 1.8rem rgba(0,0,0,0.6);
+  color: #fff;
+  text-shadow: 0 0.5rem 2rem rgba(0,0,0,0.6);
+  text-wrap: balance;
 }
-.watch-overlay.cinematic #watchMeta { letter-spacing: 0.08em; opacity: 0.92; }
+
+.watch-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 0.9rem;
+  margin: 0.2rem 0 0;
+  color: rgba(236, 238, 250, 0.92);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.watch-meta-chip { display: inline-flex; align-items: center; }
+.watch-meta-chip + .watch-meta-chip::before {
+  content: "•";
+  margin-right: 0.9rem;
+  color: rgba(255,255,255,0.4);
+  font-weight: 900;
+}
+.watch-meta-score { color: #ffd66b; }
+
+.watch-taglist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.15rem 0;
+}
+.watch-pill {
+  padding: 0.32rem 0.8rem;
+  border-radius: 999rem;
+  border: 0.08rem solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.07);
+  color: rgba(240, 241, 250, 0.95);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+.watch-pill-cast {
+  border-style: dashed;
+  border-color: rgba(255,255,255,0.14);
+  background: transparent;
+}
+
+.watch-summary {
+  margin: 0.2rem 0 0.3rem;
+  max-width: 38rem;
+  color: rgba(223, 226, 240, 0.86);
+  font-size: clamp(0.92rem, 1.1vw, 1.04rem);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow: 0 0.2rem 0.8rem rgba(0,0,0,0.45);
+}
+
+/* ── Bottom action bar ───────────────────────────────────────────────────── */
+.watch-overlay.cinematic .watch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.5rem;
+}
+.watch-overlay.cinematic .primary-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.85rem 1.9rem;
+  border: 0;
+  border-radius: 0.7rem;
+  background: var(--accent, #8a5cff);
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 0.7rem 1.8rem rgba(138, 92, 255, 0.42);
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+.watch-overlay.cinematic .primary-action::before {
+  content: "▶";
+  font-size: 0.92em;
+  line-height: 1;
+}
+.watch-overlay.cinematic .primary-action:is(:hover, :focus-visible) {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow: 0 0.9rem 2.2rem rgba(138, 92, 255, 0.55);
+  outline: 0;
+}
+
+.icon-action {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  flex: none;
+  border: 0.08rem solid rgba(255,255,255,0.18);
+  border-radius: 999rem;
+  background: rgba(18, 18, 30, 0.55);
+  color: #fff;
+  font-size: 1.2rem;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+.icon-action:is(:hover, :focus-visible) {
+  transform: translateY(-1px);
+  background: rgba(40, 40, 60, 0.7);
+  border-color: rgba(255,255,255,0.32);
+  outline: 0;
+}
+.icon-action.is-active {
+  color: #ff6b8b;
+  border-color: rgba(255, 107, 139, 0.6);
+  background: rgba(255, 107, 139, 0.16);
+}
+/* Tooltip on pointer devices. */
+@media (hover: hover) {
+  .icon-action[data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 0.5rem);
+    left: 50%;
+    transform: translateX(-50%) translateY(0.3rem);
+    padding: 0.3rem 0.6rem;
+    border-radius: 0.45rem;
+    background: rgba(10, 10, 18, 0.95);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 140ms ease, transform 140ms ease;
+  }
+  .icon-action[data-tip]:hover::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* ── RIGHT: elevated source / episode panel ──────────────────────────────── */
+.watch-side {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  padding: 0.9rem 0.7rem 0.9rem 0.9rem;
+  background: linear-gradient(180deg, rgba(15, 16, 27, 0.82), rgba(8, 9, 17, 0.92));
+  border-left: 0.08rem solid rgba(255,255,255,0.08);
+  border-top-left-radius: 1.1rem;
+  border-bottom-left-radius: 1.1rem;
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: -1.4rem 0 3rem rgba(0,0,0,0.4);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.watch-side::-webkit-scrollbar { display: none; }
+.watch-side .episode-list {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The video-frame is only a mount point for the fixed cinema player; in the
+   detail view it occupies no space and its placeholder content stays hidden. */
+.watch-side .video-frame {
+  position: absolute;
+  width: 0;
+  height: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: none !important;
+}
+.watch-side .video-frame::before { display: none !important; }
+
+/* During playback the fixed cinema player must escape to the viewport, so strip
+   any property on its ancestors that would create a fixed-positioning context. */
+body.player-cinema-open .watch-side,
+body.has-embedded-player .watch-side {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  filter: none !important;
+  transform: none !important;
+  overflow: visible !important;
+}
+
+/* ── Mobile: stack backdrop + content, source panel becomes a bottom sheet ── */
+@media (max-width: 860px) {
+  .watch-overlay.cinematic .watch-panel {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+    height: 100dvh;
+  }
+  .watch-backdrop { background-position: center 8%; }
+  .watch-backdrop::after {
+    background:
+      linear-gradient(0deg, rgba(6,6,13,0.97) 8%, rgba(7,7,15,0.05) 60%, rgba(7,7,15,0.3) 100%),
+      linear-gradient(90deg, rgba(7,7,15,0.55) 0%, transparent 40%);
+  }
+  .watch-stage {
+    justify-content: flex-end;
+    padding: 3rem 1.2rem 1rem;
+  }
+  .watch-stage-body { max-width: none; }
+  .watch-side {
+    height: auto;
+    max-height: 46dvh;
+    padding: 0.8rem 0.9rem calc(0.8rem + env(safe-area-inset-bottom));
+    border-left: 0;
+    border-top: 0.08rem solid rgba(255,255,255,0.08);
+    border-radius: 1.1rem 1.1rem 0 0;
+    box-shadow: 0 -1.4rem 3rem rgba(0,0,0,0.5);
+  }
+  .watch-overlay.cinematic .watch-title { font-size: clamp(1.7rem, 7vw, 2.6rem); }
+  .watch-summary { -webkit-line-clamp: 2; }
+}
+
+/* ── TV remote focus: clear ring + lift on the cinematic controls ─────────── */
+.watch-overlay.cinematic .primary-action.is-tv-focused,
+.icon-action.is-tv-focused,
+.watch-overlay.cinematic .close-button.is-tv-focused {
+  outline: 0;
+  box-shadow: 0 0 0 0.22rem var(--accent, #8a5cff), 0 0.8rem 2rem rgba(0,0,0,0.5);
+  transform: translateY(-2px) scale(1.04);
+}

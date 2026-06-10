@@ -203,6 +203,8 @@ const overlay = document.querySelector("#watchOverlay");
 const closeOverlay = document.querySelector("#closeOverlay");
 const favoriteButton = document.querySelector("#favoriteButton");
 const fakePlay = document.querySelector("#fakePlay");
+const trailerButton = document.querySelector("#trailerButton");
+const shareButton = document.querySelector("#shareButton");
 const castButton = document.querySelector("#castButton");
 const episodeList = document.querySelector("#episodeList");
 const sections = document.querySelectorAll("[data-section]");
@@ -307,8 +309,7 @@ function applyAppLanguage() {
   });
   if (fakePlay) fakePlay.textContent = t("play");
   if (castButton) castButton.textContent = t("cast");
-  if (favoriteButton && state.activeShow) favoriteButton.textContent = state.favorites.includes(state.activeShow.id) ? t("favorited") : t("favorite");
-  if (favoriteButton && !state.activeShow) favoriteButton.textContent = t("favorite");
+  setFavoriteButtonState(Boolean(state.activeShow && state.favorites.includes(state.activeShow.id)));
   document.querySelector("#videoFrame [data-i18n-placeholder]")?.removeAttribute("data-i18n-placeholder");
 }
 
@@ -4030,7 +4031,9 @@ async function openShow(id, target = {}) {
   state.activeShow = show;
   state.activeEpisodeUrl = "";
   state.activeEpisode = null;
-  state.activeDetailTab = "anime";
+  // Metadata now lives on the cinematic left column, so the right panel opens
+  // straight to the episode list (matches the reference composition).
+  state.activeDetailTab = "episodes";
   state.activeSeasonIndex = 0;
   const openToken = `${show.id || getShowKey(show)}:${Date.now()}`;
   state.activeOpenToken = openToken;
@@ -4039,7 +4042,7 @@ async function openShow(id, target = {}) {
   resetVideoFrame();
   syncWatchHeading(show);
   document.querySelector("#watchDescription").textContent = show.description;
-  favoriteButton.textContent = state.favorites.includes(show.id) ? t("favorited") : t("favorite");
+  setFavoriteButtonState(state.favorites.includes(show.id));
   overlay.hidden = false;
   // Land focus on the Play action (remote-friendly) so OK plays and D-pad reaches
   // the episode list — instead of the easily-missed close button.
@@ -4090,7 +4093,7 @@ async function hydrateOpenShowDetails(show, target = {}, openToken = "") {
     syncWatchHeading(show);
     const descriptionNode = document.querySelector("#watchDescription");
     if (descriptionNode) descriptionNode.textContent = show.description;
-    favoriteButton.textContent = state.favorites.includes(show.id) ? t("favorited") : t("favorite");
+    setFavoriteButtonState(state.favorites.includes(show.id));
     // Pre-fetch sources in the background so they're ready, but only OPEN the
     // source picker when the user explicitly intends to play (Play button or an
     // episode click). Opening a show from a card/poster lands on the detail view.
@@ -4482,7 +4485,7 @@ function closeShow() {
   state.activeShow = null;
   state.activeEpisodeUrl = "";
   state.activeEpisode = null;
-  state.activeDetailTab = "anime";
+  state.activeDetailTab = "episodes";
   state.activeSeasonIndex = 0;
   if (episodeList) {
     episodeList.hidden = true;
@@ -4521,7 +4524,7 @@ function toggleFavorite() {
     ? state.favorites.filter((favorite) => favorite !== id)
     : [...state.favorites, id];
   localStorage.setItem("anime-tv-favorites", JSON.stringify(state.favorites));
-  favoriteButton.textContent = state.favorites.includes(id) ? t("favorited") : t("favorite");
+  setFavoriteButtonState(state.favorites.includes(id));
   render();
 }
 
@@ -4596,6 +4599,107 @@ function getSeasonDisplayTitle(show, season) {
   return seasonNumber > 1 ? `${baseTitle} Season ${seasonNumber}` : baseTitle;
 }
 
+// Keep the heart icon intact while reflecting favorite state via class/aria
+// (the button is now an icon button, so we must not overwrite its textContent).
+function setFavoriteButtonState(isFav) {
+  if (!favoriteButton) return;
+  favoriteButton.classList.toggle("is-active", Boolean(isFav));
+  favoriteButton.setAttribute("aria-pressed", isFav ? "true" : "false");
+  const label = isFav ? t("favorited") : t("favorite");
+  favoriteButton.setAttribute("aria-label", label);
+  favoriteButton.dataset.tip = label;
+}
+
+function detailFormatLabel(format) {
+  if (!format) return "";
+  const map = {
+    TV: "TV", TV_SHORT: "TV Short", MOVIE: "Movie", SPECIAL: "Special",
+    OVA: "OVA", ONA: "ONA", MUSIC: "Music"
+  };
+  const key = String(format).toUpperCase();
+  return map[key] || String(format).replace(/_/g, " ");
+}
+
+function detailStatusLabel(status) {
+  if (!status) return "";
+  const map = {
+    RELEASING: "Airing", FINISHED: "Finished", NOT_YET_RELEASED: "Upcoming",
+    CANCELLED: "Cancelled", HIATUS: "Hiatus", CURRENTLY_AIRING: "Airing",
+    FINISHED_AIRING: "Finished"
+  };
+  const key = String(status).toUpperCase();
+  return map[key] || String(status).replace(/_/g, " ");
+}
+
+function trailerWatchUrl(tr) {
+  if (!tr || !tr.id) return "";
+  const site = String(tr.site || "youtube").toLowerCase();
+  if (site === "dailymotion") return `https://www.dailymotion.com/video/${tr.id}`;
+  return `https://www.youtube.com/watch?v=${tr.id}`;
+}
+
+// Reveal the Trailer action only when AniList actually has one for this show.
+function updateTrailerButton(show) {
+  if (!trailerButton || !show) return;
+  const cached = show.anilistId ? _readTrailerCache(show.anilistId) : null;
+  if (cached && cached.id) {
+    trailerButton.hidden = false;
+    trailerButton.dataset.trailerUrl = trailerWatchUrl(cached);
+  } else {
+    trailerButton.hidden = true;
+    trailerButton.dataset.trailerUrl = "";
+    // Not fetched yet → fetch in the background and re-check when it resolves.
+    if (show.anilistId && cached === undefined && typeof fetchAniListTrailers === "function") {
+      fetchAniListTrailers([show.anilistId]).then(() => {
+        if (state.activeShow?.id === show.id) updateTrailerButton(state.activeShow);
+      }).catch(() => {});
+    }
+  }
+}
+
+// Fill the cinematic left column: meta row, genre pills, cast (when available).
+function renderDetailMeta(show) {
+  if (!show) return;
+  const metaRow = document.querySelector("#watchMetaRow");
+  if (metaRow) {
+    const chips = [];
+    const fmt = detailFormatLabel(show.format);
+    const year = show.year ? String(show.year) : "";
+    const dur = Number(show.duration) ? `${show.duration} min` : "";
+    const status = detailStatusLabel(show.status);
+    [fmt, year, dur, status].filter(Boolean).forEach((txt) => {
+      chips.push(`<span class="watch-meta-chip">${escapeHtml(txt)}</span>`);
+    });
+    if (show.score) chips.push(`<span class="watch-meta-chip watch-meta-score">★ ${escapeHtml(String(show.score))}%</span>`);
+    metaRow.innerHTML = chips.join("");
+    metaRow.hidden = chips.length === 0;
+  }
+
+  const genresWrap = document.querySelector("#watchGenres");
+  if (genresWrap) {
+    const genres = (show.genres && show.genres.length ? show.genres : (show.genre ? [show.genre] : []))
+      .map((g) => (typeof g === "string" ? g : g?.name))
+      .filter(Boolean)
+      .filter((g, i, arr) => arr.indexOf(g) === i)
+      .slice(0, 4);
+    genresWrap.innerHTML = genres.map((g) => `<span class="watch-pill">${escapeHtml(String(g))}</span>`).join("");
+    genresWrap.hidden = genres.length === 0;
+  }
+
+  // Cast — hidden gracefully when no data source provides it.
+  const castWrap = document.querySelector("#watchCast");
+  if (castWrap) {
+    const cast = (show.cast || show.actors || show.characters || [])
+      .map((c) => (typeof c === "string" ? c : c?.name))
+      .filter(Boolean)
+      .slice(0, 3);
+    castWrap.innerHTML = cast.map((c) => `<span class="watch-pill watch-pill-cast">${escapeHtml(String(c))}</span>`).join("");
+    castWrap.hidden = cast.length === 0;
+  }
+
+  updateTrailerButton(show);
+}
+
 function syncWatchHeading(show = state.activeShow, season = null) {
   if (!show) return;
   const seasons = getDetailSeasons(show);
@@ -4607,13 +4711,16 @@ function syncWatchHeading(show = state.activeShow, season = null) {
   if (metaNode) {
     metaNode.textContent = compactMetadataLine(show);
   }
+  renderDetailMeta(show);
   // Cinematic backdrop: prefer a wide banner, fall back to the poster.
   const backdrop = document.querySelector("#watchBackdrop");
   if (backdrop) {
     const art = getCarouselArtwork(show) || show.banner || show.backdrop || show.image || "";
     backdrop.style.backgroundImage = art ? `url("${art}")` : "";
     backdrop.classList.toggle("has-art", Boolean(art));
-    overlay?.classList.toggle("cinematic", Boolean(art));
+    // Always cinematic; .has-art only switches image-backdrop vs gradient fallback.
+    overlay?.classList.add("cinematic");
+    overlay?.classList.toggle("has-backdrop-art", Boolean(art));
   }
 }
 
@@ -5651,10 +5758,10 @@ function showEpisodeListTab() {
   }
   state.activeDetailTab = "episodes";
   renderEpisodeList(state.activeShow);
-  // Scroll the watch-info panel (right panel) to the episode list
+  // Scroll the right source/episode panel to the episode list
   window.setTimeout(() => {
-    const watchInfo = document.querySelector(".watch-info");
-    if (watchInfo) watchInfo.scrollTo({ top: watchInfo.scrollHeight, behavior: "smooth" });
+    const sidePanel = document.querySelector(".watch-side");
+    if (sidePanel) sidePanel.scrollTo({ top: sidePanel.scrollHeight, behavior: "smooth" });
     episodeList?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, 80);
   refreshFocusables();
@@ -7588,6 +7695,32 @@ fakePlay.addEventListener("click", () => {
 });
 castButton?.addEventListener("click", () => {
   castActiveEpisode();
+});
+
+trailerButton?.addEventListener("click", () => {
+  const url = trailerButton.dataset.trailerUrl;
+  if (!url) return;
+  // Android WebView routes this through onCreateWindow → external app/browser.
+  window.open(url, "_blank", "noopener");
+});
+
+shareButton?.addEventListener("click", async () => {
+  const show = state.activeShow;
+  if (!show) return;
+  const title = getShowTitle(show) || show.title || "ZenkaiTV";
+  const shareData = { title, text: `Watch ${title} on ZenkaiTV`, url: "https://zenkaitv.com" };
+  try {
+    if (navigator.share) {
+      await navigator.share(shareData);
+    } else if (navigator.clipboard) {
+      await navigator.clipboard.writeText(shareData.url);
+      showToast("Link copied to clipboard");
+    } else {
+      showToast("Sharing isn't available here");
+    }
+  } catch (error) {
+    if (error?.name !== "AbortError") console.warn("Share failed:", error);
+  }
 });
 
 // TV remote: make search boxes read-only by default (Android app only) so spatial

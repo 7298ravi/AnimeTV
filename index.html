@@ -5,16 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0D1B2A">
     <title>ZenkaiTV — Anime Online en HD</title>
-    <link rel="icon" type="image/png" href="logo-round.png?v=252">
-    <link rel="shortcut icon" href="logo-round.png?v=252">
-    <link rel="apple-touch-icon" href="logo-round-192.png?v=252">
-    <link rel="manifest" href="manifest.webmanifest?v=252">
-    <link rel="stylesheet" href="styles.css?v=252">
+    <link rel="icon" type="image/png" href="logo-round.png?v=253">
+    <link rel="shortcut icon" href="logo-round.png?v=253">
+    <link rel="apple-touch-icon" href="logo-round-192.png?v=253">
+    <link rel="manifest" href="manifest.webmanifest?v=253">
+    <link rel="stylesheet" href="styles.css?v=253">
   </head>
   <body>
     <div class="app-loader" id="appLoader" role="status" aria-live="polite">
       <div class="loader-mark" aria-hidden="true">
-        <img class="loader-logo" src="logo-mark-transparent.png?v=252" alt="">
+        <img class="loader-logo" src="logo-mark-transparent.png?v=253" alt="">
       </div>
       <strong>ZenkaiTV</strong>
       <small>Waking the anime lounge...</small>
@@ -24,7 +24,7 @@
       <header class="topbar">
         <a class="brand focusable" href="#home" data-route="home" data-nav-label="Home">
           <span class="brand-mark" aria-hidden="true">
-            <img class="brand-logo" src="logo-mark-transparent.png?v=252" alt="">
+            <img class="brand-logo" src="logo-mark-transparent.png?v=253" alt="">
           </span>
           <span class="brand-copy">
             <strong>ZenkaiTV</strong>
@@ -202,7 +202,7 @@
 
       <footer class="bottom-bar" aria-label="ZenkaiTV footer">
         <div class="footer-brand">
-          <img class="footer-wordmark" src="logo-wordmark.png?v=252" alt="ZenkaiTV">
+          <img class="footer-wordmark" src="logo-wordmark.png?v=253" alt="ZenkaiTV">
           <p class="footer-tagline">Your anime universe — organized, ad-free, always on.</p>
           <div class="footer-meta">
             <span class="footer-status">Catalogs refresh daily</span>
@@ -216,35 +216,48 @@
     <div class="watch-overlay" id="watchOverlay" hidden>
       <div class="watch-backdrop" id="watchBackdrop" aria-hidden="true"></div>
       <div class="watch-panel" role="dialog" aria-modal="true" aria-labelledby="watchTitle">
-        <button class="close-button focusable" id="closeOverlay" aria-label="Close">×</button>
-        <div class="video-frame" id="videoFrame">
-          <div class="watch-art" id="watchArt">
-            <div class="watch-poster-placeholder">
-              <div class="play-symbol" aria-hidden="true"></div>
+        <button class="close-button focusable" id="closeOverlay" aria-label="Back" data-tip="Back">‹</button>
+
+        <!-- LEFT: cinematic detail over the backdrop -->
+        <div class="watch-stage">
+          <div class="watch-stage-body">
+            <img class="watch-logo" id="watchLogo" alt="" hidden>
+            <h2 class="watch-title" id="watchTitle">Title</h2>
+            <p class="watch-meta-row" id="watchMetaRow" aria-label="Details"></p>
+            <div class="watch-taglist" id="watchGenres" aria-label="Genres"></div>
+            <div class="watch-taglist watch-castlist" id="watchCast" aria-label="Cast" hidden></div>
+            <p class="watch-summary" id="watchDescription"></p>
+            <p class="eyebrow" id="watchMeta" hidden>Episode</p>
+            <div class="watch-actions">
+              <button class="primary-action focusable" id="fakePlay">Play</button>
+              <button class="icon-action focusable" id="trailerButton" type="button" aria-label="Watch trailer" data-tip="Trailer" hidden>
+                <span aria-hidden="true">▶</span>
+              </button>
+              <button class="icon-action focusable" id="favoriteButton" type="button" aria-label="Add to favorites" aria-pressed="false" data-tip="Favorite">
+                <span aria-hidden="true">♥</span>
+              </button>
+              <button class="icon-action focusable" id="shareButton" type="button" aria-label="Share" data-tip="Share">
+                <span aria-hidden="true">⤴</span>
+              </button>
             </div>
           </div>
-          <p>Choose an episode to load available playback servers.</p>
         </div>
-        <aside class="watch-info">
-          <p class="eyebrow" id="watchMeta">Episode</p>
-          <h2 id="watchTitle">Title</h2>
-          <p id="watchDescription"></p>
-          <div class="watch-actions">
-            <button class="primary-action focusable" id="fakePlay">Play</button>
-            <button class="secondary-action focusable" id="favoriteButton">Favorite</button>
-          </div>
+
+        <!-- RIGHT: elevated source / episode panel -->
+        <aside class="watch-side" aria-label="Episodes and sources">
+          <div class="video-frame" id="videoFrame" aria-hidden="true"></div>
           <div class="episode-list" id="episodeList" hidden></div>
         </aside>
       </div>
     </div>
 
-    <script src="js/constants.js?v=252"></script>
-    <script src="js/translations.js?v=252"></script>
-    <script src="js/utils.js?v=252"></script>
-    <script src="js/normalize.js?v=252"></script>
-    <script src="js/anilist-metadata.js?v=252"></script>
-    <script src="js/smart-source.js?v=252"></script>
-    <script src="update-manager.js?v=252"></script>
-    <script src="client.js?v=252"></script>
+    <script src="js/constants.js?v=253"></script>
+    <script src="js/translations.js?v=253"></script>
+    <script src="js/utils.js?v=253"></script>
+    <script src="js/normalize.js?v=253"></script>
+    <script src="js/anilist-metadata.js?v=253"></script>
+    <script src="js/smart-source.js?v=253"></script>
+    <script src="update-manager.js?v=253"></script>
+    <script src="client.js?v=253"></script>
   </body>
 </html>
