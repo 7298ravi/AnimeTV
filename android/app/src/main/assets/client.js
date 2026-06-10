@@ -5387,10 +5387,33 @@ function postApkPlayerCommand(iframe, command, value) {
   iframe?.contentWindow?.postMessage(JSON.stringify({ vcmd: command, val: value }), "*");
 }
 
+// True if the native Android ExoPlayer bridge exists and accepted the stream.
+// In the browser there is no bridge, so this is a no-op and the WebView player
+// runs as before.
+function playInNativeAndroidPlayer(streamUrl, streamType) {
+  try {
+    const bridge = window.ZenkaiNative;
+    if (!streamUrl || !bridge || typeof bridge.play !== "function") return false;
+    const abs = new URL(streamUrl, location.origin).href;   // ExoPlayer needs an absolute URL
+    const show = state.activeShow ? getShowTitle(state.activeShow) : "";
+    const epObj = state.activeEpisode?.episode;
+    const epNum = (epObj && (epObj.episode || epObj.number)) || "";
+    const title = [show, epNum ? `Episode ${epNum}` : ""].filter(Boolean).join(" — ");
+    bridge.play(abs, title, streamType || "auto", "{}");
+    showToast("Opening native player…");
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function setupVideoSource(video, url) {
   if (!video || !url) return;
   const sourceUrl = proxiedStreamUrl(url);
   const streamType = streamTypeFromUrl(sourceUrl) || streamTypeFromUrl(url);
+  // Android TV app: hand HLS/MP4 streams to the native ExoPlayer (the WebView's
+  // <video>/hls.js path can't reliably play them on a TV WebView).
+  if (playInNativeAndroidPlayer(sourceUrl, streamType)) return;
   if (video._animeTvHls) {
     try {
       video._animeTvHls.destroy();

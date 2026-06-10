@@ -11,6 +11,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -103,6 +104,10 @@ public class MainActivity extends Activity {
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setLoadsImagesAutomatically(true);
 
+        // Native-player bridge: the web app calls ZenkaiNative.play(url, title, type,
+        // headers) to hand a resolved stream off to ExoPlayer (HLS/MP4 the WebView can't).
+        webView.addJavascriptInterface(new ZenkaiBridge(), "ZenkaiNative");
+
         applyImmersiveMode(webView);
 
         setContentView(webView);
@@ -137,6 +142,26 @@ public class MainActivity extends Activity {
         if (url == null || url.isEmpty()) return;
         Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
         startActivity(intent);
+    }
+
+    /** JS-accessible bridge so the web UI can launch the native ExoPlayer. */
+    private class ZenkaiBridge {
+        @JavascriptInterface
+        public void play(final String url, final String title, final String type, final String headers) {
+            if (url == null || url.isEmpty()) return;
+            final Intent intent = new Intent(MainActivity.this, PlayerActivity.class);
+            intent.putExtra("url", url);
+            intent.putExtra("title", title);
+            intent.putExtra("type", type);
+            intent.putExtra("headers", headers);
+            runOnUiThread(new Runnable() {
+                @Override public void run() { startActivity(intent); }
+            });
+        }
+
+        /** Lets the web app feature-detect native playback support. */
+        @JavascriptInterface
+        public boolean available() { return true; }
     }
 
     @Override
