@@ -14,6 +14,7 @@ const {
   cleanDescription
 } = require("../js/utils.js");
 const { SmartSource } = require("../js/smart-source.js");
+const SeasonNormalization = require("../js/season-normalization.js");
 
 let passed = 0;
 let failed = 0;
@@ -100,6 +101,37 @@ const episodes = [
 const selected = { id: 8687 };
 const selectedEpisodes = episodes.filter((ep) => ep.anilistId === selected.id);
 check("Doraemon (2005) page shows only 918 episodes (not 918+26+1787)", selectedEpisodes.length === 918);
+
+console.log("\n# SeasonNormalization split-cour grouping (Dr. STONE)");
+// Bare "Part N" / "Cour N" entries (no explicit season number) must attach to
+// the CURRENT season as parts — not inflate into Season 5/6/7.
+const drStone = SeasonNormalization.normalizeFranchise([
+  { title: "Dr. STONE", format: "TV", seasonYear: 2019, episodes: 24 },
+  { title: "Dr. STONE: STONE WARS", format: "TV", seasonYear: 2021, episodes: 11 },
+  { title: "Dr. STONE New World", format: "TV", seasonYear: 2023, episodes: 11 },
+  { title: "Dr. STONE New World Part 2", format: "TV", seasonYear: 2023, episodes: 11 },
+  { title: "Dr. STONE SCIENCE FUTURE", format: "TV", seasonYear: 2025, episodes: 12 },
+  { title: "Dr. STONE SCIENCE FUTURE Cour 2", format: "TV", seasonYear: 2025, episodes: 12 },
+  { title: "Dr. STONE SCIENCE FUTURE Cour 3", format: "TV", seasonYear: 2026, episodes: 11 }
+]).groups.map((g) => g.title);
+check("Dr. STONE groups New World cours as Season 3 Part 1/2",
+  drStone.includes("Season 3 Part 1") && drStone.includes("Season 3 Part 2"));
+check("Dr. STONE groups Science Future cours as Season 4 Part 1/2/3",
+  drStone.includes("Season 4 Part 1") && drStone.includes("Season 4 Part 2") && drStone.includes("Season 4 Part 3"));
+check("Dr. STONE does not inflate to Season 5/6/7",
+  !drStone.some((t) => /Season [567]/.test(t)));
+
+console.log("\n# SeasonNormalization preserves Final Season labels (Attack on Titan)");
+const aot = SeasonNormalization.normalizeFranchise([
+  { title: "Shingeki no Kyojin", format: "TV", seasonYear: 2013, episodes: 25 },
+  { title: "Shingeki no Kyojin Season 2", format: "TV", seasonYear: 2017, episodes: 12 },
+  { title: "Shingeki no Kyojin Season 3", format: "TV", seasonYear: 2018, episodes: 12 },
+  { title: "Shingeki no Kyojin Season 3 Part 2", format: "TV", seasonYear: 2019, episodes: 10 },
+  { title: "Shingeki no Kyojin: The Final Season", format: "TV", seasonYear: 2020, episodes: 16 },
+  { title: "Shingeki no Kyojin: The Final Season Part 2", format: "TV", seasonYear: 2022, episodes: 12 }
+]).groups.map((g) => g.title);
+check("AoT keeps a 'Final Season' label (not renumbered)", aot.some((t) => /Final Season/i.test(t)));
+check("AoT groups Season 3 cours as Part 1/2", aot.includes("Season 3 Part 1") && aot.includes("Season 3 Part 2"));
 
 console.log("\n# cleanDescription (no mid-word truncation)");
 const desc = "The quick brown fox jumps over the lazy dog and then keeps running forever";

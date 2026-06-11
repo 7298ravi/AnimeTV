@@ -14,7 +14,7 @@
 // ── Franchise version ────────────────────────────────────────────────────────
 // Bump this whenever traversal/merge logic changes so every show gets a fresh
 // franchise rebuild on next open (in-memory cached franchises become stale).
-const _FRANCHISE_VERSION = 12;         // year-aware TV/ONA chain guard → keep franchises that switch format between seasons
+const _FRANCHISE_VERSION = 13;         // group bare "Part/Cour N" into the current season (split-cour) instead of new seasons
 const _MEDIA_CACHE_VERSION_KEY = "animetv-anilist-cache-v";
 const _MEDIA_CACHE_VERSION_VAL = "11"; // clears stale localStorage media cache
 

@@ -5320,7 +5320,7 @@ function buildSeasonNav(show, seasons) {
 }
 
 function renderEpisodeList(show) {
-  if (!episodeList) return;
+  if (!episodeList || !show) return;
   // Lazily pull AniList per-episode titles/thumbnails + HQ banner once the show's
   // anilistId is known (for scraped shows it arrives after source enrichment).
   if ((show.anilistId || show.malId) && !show._extrasTried && !show.streamingEpisodes) {
@@ -5531,15 +5531,37 @@ function renderEpisodeList(show) {
     });
   }
 
+  // Resolve the live nav at click time so a stale render-time list (e.g. built
+  // before the franchise finished loading) can never strand navigation.
+  const liveNav = () => {
+    const ctx = state.activeShow || show;
+    const list = buildSeasonNav(ctx, getDetailSeasons(ctx));
+    return { ctx, list: list.length ? list : seasonNav };
+  };
   const navTo = (navIndex) => {
-    const target = seasonNav[navIndex];
+    const { ctx, list } = liveNav();
+    const target = list[navIndex] || seasonNav[navIndex];
     if (!target) return;
     closeSeasonMenu();   // always dismiss the dropdown on a selection
-    if (target.relatedShowId) { openShow(target.relatedShowId); return; }
+    if (target.relatedShowId) {
+      // Carry the already-built franchise to the season we're opening (it's the
+      // SAME franchise), so the target renders its full season list + working
+      // Prev/Next immediately instead of flashing a lone "Season 1" while it
+      // re-hydrates. getFranchiseSeasonList recomputes the current-season flag.
+      const tgt = state.shows.find((s) =>
+        String(s.id) === String(target.relatedShowId) || getShowKey(s) === String(target.relatedShowId));
+      if (tgt && ctx?.anilistFranchise && !tgt.anilistFranchise) {
+        tgt.anilistFranchise = ctx.anilistFranchise;
+        tgt.anilistFranchiseLoaded = true;
+        tgt._franchiseVersion = ctx._franchiseVersion;
+      }
+      openShow(target.relatedShowId);
+      return;
+    }
     state.activeSeasonIndex = Math.max(0, target.localIndex);
     state.activeEpisode = null;
     state.activeEpisodeUrl = "";
-    renderEpisodeList(show);
+    renderEpisodeList(ctx);
     resetVideoFrame();
     refreshFocusables();
   };
@@ -5549,8 +5571,14 @@ function renderEpisodeList(show) {
   });
   episodeList.querySelectorAll("[data-season-step]").forEach((button) => {
     button.addEventListener("click", () => {
-      if (button.hasAttribute("disabled")) return;
-      navTo(activeNavIndex + Number(button.dataset.seasonStep));
+      // Recompute the current season from the live nav (not the render-time
+      // closure) so Prev/Next always step relative to where we actually are.
+      const { list } = liveNav();
+      let curIdx = list.findIndex((s) => s.isCurrent);
+      if (curIdx < 0) curIdx = activeNavIndex;
+      const targetIdx = curIdx + Number(button.dataset.seasonStep);
+      if (targetIdx < 0 || targetIdx >= list.length) return; // at the ends
+      navTo(targetIdx);
     });
   });
 

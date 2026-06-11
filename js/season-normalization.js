@@ -72,6 +72,29 @@ const SeasonNormalization = (function() {
       }
     });
 
+    // 2b. Relabel split seasons consistently. When a plain numbered season ends
+    // up with several groups (a base cour + its "Part 2/3"), present them all as
+    // "Season N Part 1/2/3" so the base cour isn't an unnumbered "Season N" next
+    // to a "Season N Part 2". Only plain "Season N" labels are touched — Final
+    // Season / arc / chapters titles are left exactly as they are.
+    const seasonBuckets = new Map();
+    groups.forEach((g) => {
+      if (g.type !== TYPE_MAIN || !g.seasonNumber) return;
+      const arr = seasonBuckets.get(g.seasonNumber) || [];
+      arr.push(g);
+      seasonBuckets.set(g.seasonNumber, arr);
+    });
+    seasonBuckets.forEach((arr, seasonNum) => {
+      if (arr.length < 2) return;
+      if (!arr.every((g) => /^Season \d+( Part \d+)?$/i.test(g.title))) return; // skip Final/arc labels
+      arr.sort((a, b) => (a.partNumber || 1) - (b.partNumber || 1));
+      arr.forEach((g, i) => {
+        g.partNumber = i + 1;
+        g.title = `Season ${seasonNum} Part ${i + 1}`;
+        g.id = `season-${seasonNum}-part-${i + 1}`;
+      });
+    });
+
     // 3. Final polish: sort groups and ensure labels are clean
     return {
       groups: groups.sort((a, b) => {
@@ -226,6 +249,17 @@ const SeasonNormalization = (function() {
 
     if (item.arcName) {
        return { groupId: `arc-${item.arcName.toLowerCase().replace(/\s+/g, '-')}`, groupTitle: `${item.arcName} Arc`, groupType: TYPE_MAIN };
+    }
+
+    // A bare "Part N" / "Cour N" (N >= 2) with NO explicit season number is the
+    // next cour of the CURRENT season, not a brand-new season — e.g. Dr. STONE
+    // "New World Part 2" or "Science Future Cour 2/3". Attaching it to the
+    // current season keeps split-cour shows from inflating into Season 5/6/7.
+    // (The base cour, which has no part number, created the current season just
+    // before this; the relabel pass below renumbers them Part 1/2/3.)
+    if (pNum && pNum >= 2 && existingGroups.some((g) => g.type === TYPE_MAIN)) {
+      const baseSeason = currentMaxSeason || 1;
+      return { groupId: `season-${baseSeason}-part-${pNum}`, groupTitle: `Season ${baseSeason} Part ${pNum}`, seasonNumber: baseSeason, partNumber: pNum, groupType: TYPE_MAIN };
     }
 
     // Fallback: If no markers but it's main type, it's likely Season 1 or the "Next" season
