@@ -443,33 +443,43 @@ function _refineSeasonParts(seasons) {
 
 /**
  * Build the franchise structure from a full traversal of AniList relations.
- * Returns { mainAnilistId, tvSeasons[], movies[], ovas[], onas[], specials[], all[] }
+ * Returns { mainAnilistId, groups: [], all[] }
  *
- * tvSeasons = the main story line (PREQUEL/SEQUEL chain) in chronological order —
- * every season AND part shown separately with its real label (no merging), so
- * multi-part franchises (Attack on Titan, etc.) read correctly end to end.
+ * Each group in groups[] follows the normalized structure:
+ * { id, title, type, seasonNumber, partNumber, yearStart, items: [...] }
  */
 async function buildFranchiseFromAniListMedia(media) {
   const nodeMap = await _traverseFranchise(media);
+  const allNodes = [...nodeMap.values()].map(v => v.node);
 
-  const all = [...nodeMap.values()].map(v => v.node).sort(_sortByAirDate);
+  // Use the new universal normalization system
+  const normalized = SeasonNormalization.normalizeFranchise(allNodes);
 
-  // The main story chain — seasons, split-cour parts, and any "Final Chapters".
-  const tvSeasons = all.filter(e => e.mainline).sort(_sortByAirDate);
-  tvSeasons.forEach((entry, i) => {
-    entry.seasonNumber = i + 1;
-    entry.seasonLabel  = deriveSeasonLabel(entry, i);
+  // Map groups to the format expected by the UI builders if needed,
+  // or just provide the new groups structure.
+  // To maintain some compatibility with existing code that expects
+  // franchise.tvSeasons, franchise.movies, etc.
+
+  const tvSeasons = normalized.groups.filter(g => g.type === "main").flatMap(g => {
+    // Each group becomes a "season card" in the UI.
+    // We'll attach the group metadata to each item or just return the groups.
+    // The UI (buildSeasonListFromAniListFranchise) needs to be updated too.
+    return g;
   });
-  _refineSeasonParts(tvSeasons);
 
-  // Extras = OVAs, movies, parody specials, side stories NOT on the main chain.
-  const extras   = all.filter(e => !e.mainline);
-  const movies   = extras.filter(e => e.format === "MOVIE");
-  const ovas     = extras.filter(e => e.format === "OVA");
-  const onas     = extras.filter(e => e.format === "ONA");
-  const specials = extras.filter(e => e.format === "SPECIAL" || e.format === "MUSIC");
+  const movies = normalized.groups.filter(g => g.type === "movie");
+  const ovas = normalized.groups.filter(g => g.type === "special");
+  const recaps = normalized.groups.filter(g => g.type === "recap");
 
-  return { mainAnilistId: media.id, tvSeasons, movies, ovas, onas, specials, all };
+  return {
+    mainAnilistId: media.id,
+    groups: normalized.groups,
+    tvSeasons, // Now these are Groups, not just entries
+    movies: movies.flatMap(g => g.items),
+    ovas: ovas.flatMap(g => g.items),
+    recaps: recaps.flatMap(g => g.items),
+    all: allNodes
+  };
 }
 
 // ── Placeholder episodes from AniList data ───────────────────────────────────
@@ -529,113 +539,67 @@ function getAniListDisplayEpisodeCount(entry = {}) {
  */
 function buildSeasonListFromAniListFranchise(show, showsMap, getDetailSeasons, makePlaceholderEpisodes) {
   const franchise = show.anilistFranchise;
-  if (!franchise) return null;
+  if (!franchise || !franchise.groups) return null;
 
   const result = [];
   const showAniId = String(show.anilistId || "");
 
-  // ── TV seasons ────────────────────────────────────────────────────────────
-  for (const entry of franchise.tvSeasons) {
-    const entryAniId  = String(entry.anilistId);
-    const extraAniId  = entry.extraAnilistId ? String(entry.extraAnilistId) : null;
-    // A season is "current" if the opened show matches either the primary or the
-    // extra AniList ID (the latter happens when we merged two split-cour parts).
-    const isCurrent   = entryAniId === showAniId || extraAniId === showAniId;
-    const matchedShow   = showsMap.get(entryAniId) || (extraAniId ? showsMap.get(extraAniId) : null);
-    const resolvedId    = matchedShow ? matchedShow.id : `anilist-${entryAniId}`;
-    const currentSeasons = isCurrent ? getDetailSeasons(show) : null;
+  for (const group of franchise.groups) {
+    // A group is current if any of its items match the current show
+    const isCurrent = group.items.some(item =>
+      String(item.anilistId) === showAniId ||
+      (item.extraAnilistId && String(item.extraAnilistId) === showAniId)
+    );
 
-    // Authoritative aired-till-today count for THIS season, straight from
-    // AniList (airing → last aired ep; finished → real total; movie → 1).
-    const airedCount = getAniListDisplayEpisodeCount(entry);
+    const mainItem = group.items[0];
+    const entryAniId = String(mainItem.anilistId);
+    const matchedShow = showsMap.get(entryAniId);
+    const resolvedId = matchedShow ? matchedShow.id : `anilist-${entryAniId}`;
 
-    let seasonEpisodes;
-    let currentPlayable = false;
-    if (isCurrent) {
-      // getDetailSeasons can return the WHOLE franchise (every related season)
-      // when sibling seasons are in the catalog. Use ONLY the season matching
-      // this entry — otherwise Season 1 absorbs every other season's episodes
-      // (e.g. Iruma S1 showing 85 instead of 23).
-      const ds = currentSeasons || [];
-      let pick = ds.find(s => Number(s.season) === Number(entry.seasonNumber));
-      if (!pick && ds.length === 1) pick = ds[0];
-      if (!pick) pick = ds.find(s => (s.episodes || []).some(e => !e.locked));
-      seasonEpisodes = pick ? (pick.episodes || []) : makePlaceholderEpisodesFromAniList(entry);
-      currentPlayable = Boolean(pick?.playable);
-    } else {
-      seasonEpisodes = matchedShow
-        ? makePlaceholderEpisodes(matchedShow, entry.seasonNumber)
-        : makePlaceholderEpisodesFromAniList(entry);
-    }
-    // Cap to the real aired count. Cap by COUNT (slice), not by episode number —
-    // episode numbers can be season-relative, so a number filter can't be trusted.
-    if (airedCount > 0 && seasonEpisodes.length > airedCount) {
-      seasonEpisodes = seasonEpisodes.slice(0, airedCount);
-    }
+    let groupEpisodes = [];
+    let groupPlayable = false;
 
-    result.push({
-      season:        entry.seasonNumber,
-      // A lone mainline entry is one continuous anime — show "Episodes", not an
-      // invented "Season 1" (spec: don't invent seasons).
-      title:         franchise.tvSeasons.length === 1 ? "Episodes" : (entry.seasonLabel || `Season ${entry.seasonNumber}`),
-      sourceTitle:   isCurrent ? show.title : (entry.title || matchedShow?.title || entry.seasonLabel || `Season ${entry.seasonNumber}`),
-      image:         isCurrent ? (show.image || entry.image) : (matchedShow?.image || entry.image || show.image),
-      format:        entry.format,
-      status:        entry.status,
-      year:          entry.seasonYear,
-      anilistId:     entry.anilistId,
-      isCurrentShow: isCurrent,
-      relatedShowId: isCurrent ? null : resolvedId,
-      episodes:      seasonEpisodes,
-      playable:      isCurrent ? currentPlayable : false,
+    group.items.forEach(item => {
+      const itemIsCurrent = String(item.anilistId) === showAniId;
+      const itemMatched = showsMap.get(String(item.anilistId));
+
+      let itemEps = [];
+      if (itemIsCurrent) {
+        const ds = getDetailSeasons(show) || [];
+        // Extract episodes that belong to this entry
+        itemEps = ds.flatMap(s => s.episodes || []);
+        groupPlayable = groupPlayable || ds.some(s => s.playable);
+      } else {
+        itemEps = itemMatched
+          ? makePlaceholderEpisodes(itemMatched, group.seasonNumber || 1)
+          : makePlaceholderEpisodesFromAniList(item);
+      }
+
+      // Cap to aired count
+      const airedCount = getAniListDisplayEpisodeCount(item);
+      if (airedCount > 0 && itemEps.length > airedCount) {
+        itemEps = itemEps.slice(0, airedCount);
+      }
+      groupEpisodes.push(...itemEps);
     });
-  }
-
-  // ── Extras (Movie / OVA / ONA / Special) ─────────────────────────────────
-  const extras = [
-    ...franchise.movies.map(e => ({ ...e, sectionLabel: "Movie" })),
-    ...franchise.ovas.map(e =>   ({ ...e, sectionLabel: "OVA"   })),
-    ...franchise.onas.map(e =>   ({ ...e, sectionLabel: "ONA"   })),
-    ...franchise.specials.map(e =>({ ...e, sectionLabel: "Special" })),
-  ];
-
-  for (const entry of extras) {
-    const entryAniId  = String(entry.anilistId);
-    const isCurrent   = entryAniId === showAniId;
-    // Prefer a real catalog match; fall back to the synthetic AniList ID which
-    // ensureFranchiseShowsInCatalog() will have created before any click fires.
-    const matchedShow   = showsMap.get(entryAniId);
-    const resolvedId    = matchedShow ? matchedShow.id : `anilist-${entryAniId}`;
-    const idx           = result.length + 1;
-    const label         = entry.sectionLabel;
-    const title         = entry.title || `${label} ${idx}`;
-    const currentSeasons = isCurrent ? getDetailSeasons(show) : null;
-
-    const airedCount = getAniListDisplayEpisodeCount(entry);
-    let extraEpisodes = isCurrent
-      ? (currentSeasons || []).flatMap(s => s.episodes || [])
-      : makePlaceholderEpisodesFromAniList(entry);
-    if (airedCount > 0) {
-      extraEpisodes = extraEpisodes.filter(ep =>
-        Number(ep.episode ?? ep.number ?? 0) <= airedCount);
-    }
 
     result.push({
-      season:        idx,
-      title,
-      sourceTitle:   title,
-      image:         isCurrent ? (show.image || entry.image) : (matchedShow?.image || entry.image || show.image),
-      format:        entry.format,
-      formatBadge:   label,
-      status:        entry.status,
-      year:          entry.seasonYear,
-      anilistId:     entry.anilistId,
+      id: group.id,
+      season: group.seasonNumber || result.length + 1,
+      part: group.partNumber,
+      type: group.type,
+      title: group.title,
+      sourceTitle: isCurrent ? show.title : (mainItem.title || matchedShow?.title || group.title),
+      image: isCurrent ? (show.image || mainItem.image) : (matchedShow?.image || mainItem.image || show.image),
+      format: mainItem.format,
+      formatBadge: group.type !== 'main' ? (group.type === 'movie' ? 'Movie' : group.type === 'recap' ? 'Recap' : 'Special') : '',
+      status: mainItem.status,
+      year: group.yearStart,
+      anilistId: mainItem.anilistId,
       isCurrentShow: isCurrent,
-      // Always provide a navigable ID — the show will be in state.shows by the
-      // time the user can click (ensureFranchiseShowsInCatalog runs first).
       relatedShowId: isCurrent ? null : resolvedId,
-      episodes:      extraEpisodes,
-      playable:      isCurrent ? (currentSeasons || []).some(s => s.playable) : false,
+      episodes: groupEpisodes,
+      playable: groupPlayable
     });
   }
 
@@ -694,4 +658,63 @@ async function hydrateShowAniListFranchise(show) {
     console.warn("[AniList] franchise hydration failed:", err?.message || err);
   }
   return show;
+}
+
+/**
+ * After AniList franchise hydration, make sure every franchise entry
+ * (movie, OVA, related TV seasons) has a minimal show object in state.shows.
+ */
+function ensureFranchiseShowsInCatalog(show) {
+  const franchise = show.anilistFranchise;
+  if (!franchise || !franchise.groups) return;
+
+  const allEntries = franchise.groups.flatMap(g => g.items);
+
+  const added = [];
+  for (const entry of allEntries) {
+    const aniId = String(entry.anilistId || "");
+    if (!aniId) continue;
+
+    const syntheticId = `anilist-${aniId}`;
+    const alreadyIn = state.shows.some(s =>
+      s.id === syntheticId ||
+      (s.anilistId && String(s.anilistId) === aniId)
+    );
+    if (alreadyIn) continue;
+
+    const epCount = getAniListDisplayEpisodeCount(entry);
+    added.push({
+      id:           syntheticId,
+      anilistId:    Number(aniId),
+      malId:        entry.malId || null,
+      title:        entry.title || syntheticId,
+      romajiTitle:  entry.romajiTitle || "",
+      nativeTitle:  entry.nativeTitle || "",
+      episode:      epCount || "?",
+      totalEpisodes: entry.episodes || null,
+      latestAiredEp: entry.latestAiredEp || null,
+      nextAiringEp: entry.nextAiringEp || null,
+      nextAiringEpisodeNumber: entry.nextAiringEp || null,
+      genre:        show.genre || "anime",
+      genres:       entry.genres?.length ? entry.genres : (show.genres || []),
+      format:       entry.format || "",
+      status:       entry.status || "",
+      year:         entry.seasonYear || "",
+      source:       "AniList",
+      image:        entry.image || show.image || "",
+      banner:       show.banner || "",
+      description:  entry.description || show.description || "",
+      videoUrl:     "",
+      seasons:      [],
+      episodes:     [],
+      colors:       show.colors || ["#40dfc2", "#251d47"],
+      day:          "TBA",
+      time:         "",
+      score:        entry.score || null,
+    });
+  }
+
+  if (added.length > 0) {
+    state.shows = [...state.shows, ...added];
+  }
 }

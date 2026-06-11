@@ -1,0 +1,257 @@
+/**
+ * ZenkaiTV Season Normalization System
+ * 
+ * Handles grouping anime entries into a logical hierarchy of Seasons, Parts, 
+ * and Extras (Movies, OVAs, etc.) based on metadata and title parsing.
+ */
+
+const SeasonNormalization = (function() {
+  'use strict';
+
+  // Constants for grouping
+  const TYPE_MAIN = 'main';
+  const TYPE_SPECIAL = 'special';
+  const TYPE_MOVIE = 'movie';
+  const TYPE_RECAP = 'recap';
+
+  /**
+   * Main entry point: takes a list of related anime entries (from AniList franchise or similar)
+   * and returns a normalized structure of groups.
+   */
+  function normalizeFranchise(entries) {
+    if (!Array.isArray(entries) || !entries.length) return { groups: [] };
+
+    // A "franchise" with a single entry has nothing to be an extra OF — it's
+    // just that show's own episodes, regardless of its AniList format (ONA/OVA/
+    // SPECIAL anime are often the only release for a title).
+    const isStandalone = entries.length === 1;
+
+    // 1. Initial pass: parse each entry to get its identity
+    const items = entries.map((entry) => parseEntryIdentity(entry, isStandalone)).sort((a, b) => {
+      // Sort by air date / year primarily
+      const dateA = a.yearStart || 9999;
+      const dateB = b.yearStart || 9999;
+      if (dateA !== dateB) return dateA - dateB;
+      // Fallback to title order if same year
+      return String(a.title).localeCompare(b.title);
+    });
+
+    const groups = [];
+    let currentMainSeasonNumber = 1;
+
+    // 2. Grouping pass
+    items.forEach(item => {
+      // Determine target group ID and label
+      const { groupId, groupTitle, seasonNumber, partNumber, groupType } = determineGroup(item, groups, currentMainSeasonNumber, isStandalone);
+      
+      if (groupType === TYPE_MAIN && seasonNumber) {
+        currentMainSeasonNumber = Math.max(currentMainSeasonNumber, seasonNumber);
+      }
+
+      let group = groups.find(g => g.id === groupId);
+      if (!group) {
+        group = {
+          id: groupId,
+          title: groupTitle,
+          seasonNumber: seasonNumber,
+          partNumber: partNumber,
+          type: groupType,
+          yearStart: item.yearStart,
+          yearEnd: item.yearStart,
+          episodeCount: 0,
+          items: []
+        };
+        groups.push(group);
+      }
+
+      group.items.push(item);
+      group.episodeCount += (item.episodeCount || 0);
+      if (item.yearStart) {
+        group.yearStart = group.yearStart ? Math.min(group.yearStart, item.yearStart) : item.yearStart;
+        group.yearEnd = group.yearEnd ? Math.max(group.yearEnd, item.yearStart) : item.yearStart;
+      }
+    });
+
+    // 3. Final polish: sort groups and ensure labels are clean
+    return {
+      groups: groups.sort((a, b) => {
+        // Main seasons first, then movies, then specials
+        const typeOrder = { [TYPE_MAIN]: 1, [TYPE_MOVIE]: 2, [TYPE_SPECIAL]: 3, [TYPE_RECAP]: 4 };
+        const orderA = typeOrder[a.type] || 99;
+        const orderB = typeOrder[b.type] || 99;
+        if (orderA !== orderB) return orderA - orderB;
+        
+        if (a.type === TYPE_MAIN) {
+          if (a.seasonNumber !== b.seasonNumber) return (a.seasonNumber || 0) - (b.seasonNumber || 0);
+          return (a.partNumber || 0) - (b.partNumber || 0);
+        }
+        
+        return (a.yearStart || 0) - (b.yearStart || 0);
+      })
+    };
+  }
+
+  /**
+   * Parses an individual entry to extract identity markers.
+   * `isStandalone` is true when this entry is the ONLY one in its franchise —
+   * in that case it can't be "an extra" of anything, so it's always treated
+   * as the show's main content regardless of AniList format (ONA/OVA/SPECIAL
+   * formats are common for shows that only ever get a single release).
+   */
+  function parseEntryIdentity(entry, isStandalone = false) {
+    const title = entry.title || entry.romajiTitle || entry.userPreferred || "";
+    const format = String(entry.format || "").toUpperCase();
+
+    // Extract metadata
+    const yearStart = entry.seasonYear || entry.year || (entry.startDate ? entry.startDate.year : null);
+    const episodeCount = entry.episodes || entry.totalEpisodes || (entry.episode && Number.isFinite(entry.episode) ? entry.episode : 0);
+
+    // Title parsing
+    const parsed = parseTitle(title);
+
+    // Classification
+    let type = TYPE_MAIN;
+    if (!isStandalone) {
+      if (format === 'MOVIE') type = TYPE_MOVIE;
+      else if (parsed.isRecap || /\b(recap|summary|digest)\b/i.test(title)) type = TYPE_RECAP;
+      else if (format === 'SPECIAL' || format === 'OVA' || format === 'ONA' || parsed.isSpecial) {
+        // If it has a season/part number, it might be main content (e.g. AoT Final Chapters)
+        if (!parsed.seasonNumber && !parsed.partNumber && !parsed.isFinalSeason) {
+          type = TYPE_SPECIAL;
+        }
+      }
+    }
+
+    return {
+      ...entry,
+      identityTitle: title,
+      type,
+      seasonNumber: parsed.seasonNumber,
+      partNumber: parsed.partNumber,
+      isFinalSeason: parsed.isFinalSeason,
+      isFinalChapters: parsed.isFinalChapters,
+      arcName: parsed.arcName,
+      yearStart,
+      episodeCount
+    };
+  }
+
+  function parseTitle(title) {
+    const t = String(title).toLowerCase();
+    
+    const isFinalSeason = /\bfinal\s+season\b|\bthe\s+final\b/i.test(t);
+    const isFinalChapters = /\bfinal\s+chapters\b|kanketsu/i.test(t);
+    const isRecap = /\b(recap|summary|digest|総集編)\b/i.test(t);
+    const isSpecial = /\b(ova|oav|special|extra|ona)\b/i.test(t);
+
+    // Season parsing
+    let seasonNumber = null;
+    const sm = t.match(/\bseason\s*(\d+)\b/i) || t.match(/\b(\d+)(?:st|nd|rd|th)\s*season\b/i);
+    if (sm) seasonNumber = parseInt(sm[1], 10);
+    else if (/\b(second|2nd)\s+season\b/i.test(t)) seasonNumber = 2;
+    else if (/\b(third|3rd)\s+season\b/i.test(t)) seasonNumber = 3;
+    else if (/\b(fourth|4th)\s+season\b/i.test(t)) seasonNumber = 4;
+    else if (/\b(fifth|5th)\s+season\b/i.test(t)) seasonNumber = 5;
+
+    // Part / Cour parsing
+    let partNumber = null;
+    const pm = t.match(/\bpart\s*(\d+)\b/i) || t.match(/\bcour\s*(\d+)\b/i)
+            || t.match(/\b(\d+)(?:st|nd|rd|th)\s+(?:part|cour)\b/i);
+    if (pm) partNumber = parseInt(pm[1], 10);
+
+    // Arc parsing
+    let arcName = null;
+    const arcMatches = [
+      title.match(/:\s*([^:]+?)\s*Arc\b/i),
+      title.match(/\b([^:]+?)\s+Arc\b/i),
+      title.match(/-\s*([^:-]+?)\s*Arc\b/i),
+      title.match(/\b(shibuya\s+incident|hashira\s+training|entertainment\s+district|mugen\s+train|swordsmith\s+village)\b/i)
+    ];
+    
+    for (const m of arcMatches) {
+      if (m) {
+        arcName = (m[1] || m[0]).trim();
+        // Capitalize first letter of each word
+        arcName = arcName.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+        break;
+      }
+    }
+
+    return { seasonNumber, partNumber, isFinalSeason, isFinalChapters, isRecap, isSpecial, arcName };
+  }
+
+  function determineGroup(item, existingGroups, currentMaxSeason, isStandalone = false) {
+    // 1. Movies, Specials, Recaps get their own broad groups if they don't have season markers
+    if (item.type === TYPE_MOVIE && !item.seasonNumber) {
+      return { groupId: 'movies', groupTitle: 'Movies', groupType: TYPE_MOVIE };
+    }
+    if (item.type === TYPE_RECAP) {
+      return { groupId: 'recaps', groupTitle: 'Recaps / Summaries', groupType: TYPE_RECAP };
+    }
+    if (item.type === TYPE_SPECIAL && !item.seasonNumber && !item.isFinalChapters) {
+      return { groupId: 'specials-ovas', groupTitle: 'OVAs / Specials', groupType: TYPE_SPECIAL };
+    }
+
+    // 2. Main content grouping
+    let sNum = item.seasonNumber;
+    let pNum = item.partNumber;
+    let baseTitle = "";
+
+    if (item.isFinalChapters) {
+      sNum = sNum || 4; // Default Final Season to 4 if unknown
+      baseTitle = "Final Season: Final Chapters";
+      if (pNum) baseTitle += ` Part ${pNum}`;
+      return { groupId: `final-chapters-${pNum || 1}`, groupTitle: baseTitle, seasonNumber: sNum, partNumber: pNum || 3, groupType: TYPE_MAIN };
+    }
+
+    if (item.isFinalSeason) {
+      sNum = sNum || 4;
+      baseTitle = "Final Season";
+      if (pNum) {
+        return { groupId: `final-season-part-${pNum}`, groupTitle: `Final Season Part ${pNum}`, seasonNumber: sNum, partNumber: pNum, groupType: TYPE_MAIN };
+      }
+      return { groupId: 'final-season', groupTitle: 'Final Season', seasonNumber: sNum, partNumber: null, groupType: TYPE_MAIN };
+    }
+
+    if (sNum) {
+      baseTitle = `Season ${sNum}`;
+      if (pNum) {
+        return { groupId: `season-${sNum}-part-${pNum}`, groupTitle: `Season ${sNum} Part ${pNum}`, seasonNumber: sNum, partNumber: pNum, groupType: TYPE_MAIN };
+      }
+      if (item.arcName) {
+        return { groupId: `season-${sNum}-arc-${item.arcName.toLowerCase().replace(/\s+/g, '-')}`, groupTitle: `Season ${sNum}: ${item.arcName}`, seasonNumber: sNum, partNumber: null, groupType: TYPE_MAIN };
+      }
+      return { groupId: `season-${sNum}`, groupTitle: `Season ${sNum}`, seasonNumber: sNum, partNumber: null, groupType: TYPE_MAIN };
+    }
+
+    if (item.arcName) {
+       return { groupId: `arc-${item.arcName.toLowerCase().replace(/\s+/g, '-')}`, groupTitle: `${item.arcName} Arc`, groupType: TYPE_MAIN };
+    }
+
+    // Fallback: If no markers but it's main type, it's likely Season 1 or the "Next" season
+    // Check if it should be merged into the last main group if it aired very close? 
+    // No, better to keep it as a new "Season" if it's a separate entry in AniList SEQUEL chain.
+    
+    // For a single-entry anime, we use "Episodes" or "Season 1"
+    const isOnlyMain = !existingGroups.some(g => g.type === TYPE_MAIN);
+    if (isOnlyMain) {
+       if (isStandalone) {
+         return { groupId: 'season-1', groupTitle: 'Episodes', seasonNumber: 1, groupType: TYPE_MAIN };
+       }
+       return { groupId: 'season-1', groupTitle: 'Season 1', seasonNumber: 1, groupType: TYPE_MAIN };
+    }
+
+    // Incremental fallback for SEQUELs that don't have a season number in title
+    const nextSeason = currentMaxSeason + 1;
+    return { groupId: `season-${nextSeason}`, groupTitle: `Season ${nextSeason}`, seasonNumber: nextSeason, groupType: TYPE_MAIN };
+  }
+
+  return {
+    normalizeFranchise,
+    parseTitle
+  };
+})();
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = SeasonNormalization;
+}

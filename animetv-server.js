@@ -98,6 +98,12 @@ const ANILIST_MEDIA_CACHE_TTL_MS  = 1000 * 60 * 60 * 24;  // 24 h — stable met
 const ANILIST_SEARCH_CACHE_TTL_MS = 1000 * 60 * 60 * 6;   // 6 h
 const anilistMediaCache  = new Map(); // anilistId → { data, ts }
 const anilistSearchCache = new Map(); // normalizedTitle → { data, ts }
+const jikanEpisodeCache = new Map(); // malId -> { data, ts }
+const jikanFullCache = new Map(); // malId -> { data, ts }
+const jikanSearchCache = new Map(); // normalized title -> { data, ts }
+const JIKAN_EPISODE_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
+let jikanRequestQueue = Promise.resolve();
+let jikanLastRequestAt = 0;
 const ANIPUB_CATALOG_TTL_MS = 1000 * 60 * 20;
 const ANIPUB_RAW_CATALOG_TTL_MS = ANIPUB_CATALOG_TTL_MS;
 const ANIPUB_EPISODE_CACHE_TTL_MS = 1000 * 60 * 60;
@@ -548,6 +554,21 @@ function handleRequest(request, response) {
   const episodeMatch = url.pathname.match(/^\/api\/anipub\/episodes\/([^/]+)$/);
   if (episodeMatch) {
     handleAniPubEpisodes(decodeURIComponent(episodeMatch[1]), response);
+    return;
+  }
+
+  if (url.pathname === "/api/jikan/episodes") {
+    handleJikanEpisodes(url, response);
+    return;
+  }
+
+  if (url.pathname === "/api/jikan/full") {
+    handleJikanFull(url, response);
+    return;
+  }
+
+  if (url.pathname === "/api/jikan/search") {
+    handleJikanSearch(url, response);
     return;
   }
 
@@ -6409,6 +6430,7 @@ query($id:Int){
     bannerImage
     description(asHtml:false)
     genres averageScore popularity
+    studios{ nodes{ name isAnimationStudio } }
   }
 }`;
 
@@ -6438,6 +6460,7 @@ query($search:String){
       bannerImage
       description(asHtml:false)
       genres averageScore popularity
+      studios{ nodes{ name isAnimationStudio } }
     }
   }
 }`;
@@ -6699,26 +6722,55 @@ function normalizeJikanShow(entry, source) {
 
 function mergeShows(items) {
   const byKey = new Map();
+  const idMap = new Map(); // malId -> anilistId or vice versa
+
+  // First pass: Link IDs
   items.forEach((show) => {
-    const key = show.malId ? `mal-${show.malId}` : show.anilistId ? `anilist-${show.anilistId}` : `title-${normalizeTitle(show.title)}`;
-    const current = byKey.get(key);
+    if (show.malId && show.anilistId) {
+      idMap.set(`mal-${show.malId}`, `anilist-${show.anilistId}`);
+      idMap.set(`anilist-${show.anilistId}`, `mal-${show.malId}`);
+    }
+  });
+
+  items.forEach((show) => {
+    const malKey = show.malId ? `mal-${show.malId}` : null;
+    const aniKey = show.anilistId ? `anilist-${show.anilistId}` : null;
+    const titleKey = `title-${normalizeTitle(show.title)}`;
+
+    // Find the best primary key for this show
+    let key = malKey || aniKey || titleKey;
+    if (malKey && idMap.has(malKey)) key = idMap.get(malKey);
+    else if (aniKey && idMap.has(aniKey)) key = aniKey; // prefer anilist as master key
+
+    const current = byKey.get(key) || byKey.get(malKey) || byKey.get(aniKey) || byKey.get(titleKey);
+
     // When merging episode counts, take the lower value so that a source with the
     // actual latest-aired episode (e.g. AniList) isn't overwritten by a source that
     // only knows the planned total (e.g. Jikan).
-    const epA = Number(current?.episode);
-    const epB = Number(show.episode);
+    const epA = Number(current?.latestAiredEp || current?.episode);
+    const epB = Number(show.latestAiredEp || show.episode);
     const mergedEpisode = epA && epB ? Math.min(epA, epB) : (epA || epB || current?.episode || show.episode);
-    byKey.set(key, {
+
+    const merged = {
       ...current,
       ...show,
+      id: current?.id || show.id,
+      anilistId: current?.anilistId || show.anilistId,
+      malId: current?.malId || show.malId,
       episode: mergedEpisode,
       image: current?.image || show.image,
       banner: current?.banner || show.banner,
-      description: current?.description || show.description,
+      description: (current?.description?.length || 0) > (show.description?.length || 0) ? current.description : show.description,
       source: current ? `${current.source} + ${show.source}` : show.source
-    });
+    };
+
+    byKey.set(key, merged);
+    if (malKey) byKey.set(malKey, merged);
+    if (aniKey) byKey.set(aniKey, merged);
+    if (titleKey) byKey.set(titleKey, merged);
   });
-  return [...byKey.values()];
+
+  return [...new Set(byKey.values())];
 }
 
 function normalizeTitle(value) {
@@ -6811,4 +6863,102 @@ function maskSecret(value, visible = 4) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function fetchJikanJson(pathname) {
+  const run = async () => {
+    const waitMs = Math.max(0, 350 - (Date.now() - jikanLastRequestAt));
+    if (waitMs) await wait(waitMs);
+    jikanLastRequestAt = Date.now();
+    const upstream = await fetchWithRetry(`https://api.jikan.moe/v4${pathname}`);
+    if (!upstream.ok) throw new Error(`Jikan HTTP ${upstream.status}`);
+    return upstream.json();
+  };
+  const request = jikanRequestQueue.then(run, run);
+  jikanRequestQueue = request.catch(() => {});
+  return request;
+}
+
+async function handleJikanFull(url, response) {
+  const malId = url.searchParams.get("id");
+  if (!malId) return sendJson(response, { error: "Missing ID" }, 400);
+  try {
+    const cached = jikanFullCache.get(String(malId));
+    if (cached && Date.now() - cached.ts < JIKAN_EPISODE_CACHE_TTL_MS) {
+      return sendJson(response, { data: cached.data, cached: true });
+    }
+    const payload = await fetchJikanJson(`/anime/${encodeURIComponent(malId)}/full`);
+    const data = payload.data || null;
+    if (data) jikanFullCache.set(String(malId), { data, ts: Date.now() });
+    sendJson(response, { data });
+  } catch (error) {
+    console.error("[Jikan] full metadata error:", error);
+    sendJson(response, { error: error.message }, 500);
+  }
+}
+
+async function handleJikanSearch(url, response) {
+  const query = String(url.searchParams.get("q") || "").trim();
+  if (!query) return sendJson(response, { error: "Missing query" }, 400);
+  const cacheKey = normalizeTitle(query);
+  try {
+    const cached = jikanSearchCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < JIKAN_EPISODE_CACHE_TTL_MS) {
+      return sendJson(response, { data: cached.data, cached: true });
+    }
+    const payload = await fetchJikanJson(`/anime?q=${encodeURIComponent(query)}&limit=5&sfw=true`);
+    const data = payload.data || [];
+    jikanSearchCache.set(cacheKey, { data, ts: Date.now() });
+    sendJson(response, { data });
+  } catch (error) {
+    console.error("[Jikan] search error:", error);
+    sendJson(response, { error: error.message }, 500);
+  }
+}
+
+async function handleJikanEpisodes(url, response) {
+  const malId = url.searchParams.get("id");
+  if (!malId) return sendJson(response, { error: "Missing ID" }, 400);
+
+  try {
+    const cached = jikanEpisodeCache.get(String(malId));
+    if (cached && Date.now() - cached.ts < JIKAN_EPISODE_CACHE_TTL_MS) {
+      return sendJson(response, { data: cached.data, cached: true });
+    }
+
+    const firstPayload = await fetchJikanJson(`/anime/${encodeURIComponent(malId)}/episodes?page=1`);
+    const pageCount = Math.max(1, Math.min(30, Number(firstPayload.pagination?.last_visible_page || 1)));
+    const payloads = [firstPayload];
+
+    for (let page = 2; page <= pageCount; page += 2) {
+      const batch = [page, page + 1].filter((value) => value <= pageCount);
+      const results = await Promise.all(batch.map((pageNumber) =>
+        fetchJikanJson(`/anime/${encodeURIComponent(malId)}/episodes?page=${pageNumber}`)
+      ));
+      payloads.push(...results);
+    }
+
+    const episodes = payloads
+      .flatMap((payload) => payload.data || [])
+      .map(normalizeJikanEpisode)
+      .sort((a, b) => Number(a.episode || 0) - Number(b.episode || 0));
+    jikanEpisodeCache.set(String(malId), { data: episodes, ts: Date.now() });
+    sendJson(response, { data: episodes, pages: pageCount });
+  } catch (error) {
+    console.error("[Jikan] episodes error:", error);
+    sendJson(response, { error: error.message }, 500);
+  }
+}
+
+function normalizeJikanEpisode(ep) {
+  return {
+    episode: ep.mal_id,
+    title: ep.title,
+    title_japanese: ep.title_japanese,
+    image: ep.images?.webp?.image_url || ep.images?.jpg?.image_url || "",
+    aired: ep.aired,
+    filler: ep.filler,
+    recap: ep.recap,
+    forum_url: ep.forum_url
+  };
 }

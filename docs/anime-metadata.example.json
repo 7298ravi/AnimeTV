@@ -1,0 +1,13 @@
+{
+  "animeId": "replica-datte",
+  "title": "Replica Datte, Koi wo Suru.",
+  "highQualityBackground": "/images/anime-bg/replica-datte-hq.jpg",
+  "episodes": [
+    {
+      "episodeNumber": 1,
+      "title": "The Girl Who Was Never Meant to Love",
+      "episodeImage": "/images/episodes/replica-datte-01.jpg",
+      "aired": "2026-04-08T00:00:00.000Z"
+    }
+  ]
+}

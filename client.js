@@ -1606,12 +1606,12 @@ function getWatchPosterArtwork(show = {}, season = null) {
   show = show || {};
   season = season || {};
   return hqImage([
-    season?.image,
     show.image,
     show.poster,
     show.cover,
     show.coverImage,
     show.thumbnail,
+    season.image,
     show.banner,
     show.backdrop
   ].map((value) => String(value || "").trim()).find(Boolean) || "");
@@ -1619,9 +1619,35 @@ function getWatchPosterArtwork(show = {}, season = null) {
 
 function getWatchBackdropArtwork(show = {}, season = null) {
   show = show || {};
-  const poster = getWatchPosterArtwork(show, season);
-  const wide = getCarouselArtwork(show);
-  return hqImage(poster || wide || show.banner || show.backdrop || "");
+  season = season || {};
+  return hqImage([
+    show.highQualityBackground,
+    show.banner,
+    show.backdrop,
+    show.heroImage,
+    show.wideImage,
+    show.landscapeImage,
+    show.jikanBackground,
+    season.highQualityBackground,
+    season.banner,
+    season.backdrop
+  ].map((value) => String(value || "").trim()).find(Boolean) || "");
+}
+
+function stableVisualHue(value = "") {
+  let hash = 0;
+  for (const char of String(value)) hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
+  return Math.abs(hash) % 360;
+}
+
+function animeBackdropFallback(show = {}) {
+  const hue = stableVisualHue(show.id || show.title || show.romajiTitle);
+  const hue2 = (hue + 72) % 360;
+  return [
+    `radial-gradient(circle at 72% 24%, hsla(${hue2}, 78%, 55%, 0.28), transparent 38%)`,
+    `radial-gradient(circle at 28% 72%, hsla(${hue}, 84%, 48%, 0.22), transparent 42%)`,
+    "linear-gradient(118deg, #070811 0%, #111428 48%, #080914 100%)"
+  ].join(", ");
 }
 
 // Stable hero line-up. Once a healthy set of featured shows is chosen we keep it
@@ -1869,6 +1895,143 @@ function ensureCarouselTrailers(pool) {
 // ── AniList per-show extras: HQ banner backdrop + per-episode titles/thumbnails
 const _showExtrasCache = new Map();     // anilistId -> { banner, episodes:[{title,thumbnail}] }
 const _showExtrasInFlight = new Set();
+const ANIME_METADATA_CACHE_PREFIX = "zenkaitv:anime-metadata:v1:";
+const ANIME_METADATA_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function readAnimeMetadataCache(key) {
+  try {
+    const cached = JSON.parse(localStorage.getItem(ANIME_METADATA_CACHE_PREFIX + key) || "null");
+    if (!cached || Date.now() - Number(cached.savedAt || 0) > ANIME_METADATA_CACHE_TTL_MS) {
+      localStorage.removeItem(ANIME_METADATA_CACHE_PREFIX + key);
+      return null;
+    }
+    return cached.data || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeAnimeMetadataCache(key, data) {
+  try {
+    localStorage.setItem(ANIME_METADATA_CACHE_PREFIX + key, JSON.stringify({ savedAt: Date.now(), data }));
+  } catch { /* TV WebViews may have a small storage quota. */ }
+}
+
+function applyCanonicalAnimeMetadata(show, payload = {}) {
+  if (!show || !payload) return show;
+  const media = payload.media || null;
+  const jikan = payload.jikan || null;
+  if (media) {
+    show.anilistId = media.id || show.anilistId;
+    show.malId = media.idMal || show.malId;
+    show.romajiTitle = media.title?.romaji || show.romajiTitle || "";
+    show.englishTitle = media.title?.english || show.englishTitle || "";
+    show.nativeTitle = media.title?.native || show.nativeTitle || "";
+    show.image = hqImage(media.coverImage?.extraLarge || media.coverImage?.large || show.image || "");
+    show.banner = media.bannerImage || show.banner || "";
+    show.highQualityBackground = media.bannerImage || show.highQualityBackground || "";
+    show.description = cleanDescription(media.description || show.description || "");
+    show.genres = Array.isArray(media.genres) && media.genres.length ? media.genres : show.genres;
+    show.genre = show.genres?.[0] || show.genre;
+    show.score = media.averageScore || show.score;
+    show.totalEpisodes = media.episodes || show.totalEpisodes;
+    show.status = media.status || show.status;
+    show.format = media.format || show.format;
+    show.duration = media.duration || show.duration;
+    show.year = media.seasonYear || media.startDate?.year || show.year;
+    show.studios = (media.studios?.nodes || []).map((studio) => studio.name).filter(Boolean);
+  }
+  if (jikan) {
+    show.malId = jikan.mal_id || show.malId;
+    show.jikanImage = jikan.images?.webp?.large_image_url || jikan.images?.jpg?.large_image_url || "";
+    if (!show.image) show.image = show.jikanImage;
+    if (!show.highQualityBackground && !show.banner) show.jikanBackground = show.jikanImage;
+    if (!show.description || show.description.length < 60) show.description = cleanDescription(jikan.synopsis || show.description || "");
+    if (!show.score && jikan.score) show.score = Math.round(Number(jikan.score) * 10);
+    show.malRank = jikan.rank || show.malRank;
+    show.popularity = jikan.popularity || show.popularity;
+    show.studios = show.studios?.length
+      ? show.studios
+      : (jikan.studios || []).map((studio) => studio.name).filter(Boolean);
+    show.producers = (jikan.producers || []).map((producer) => producer.name).filter(Boolean);
+    if ((!show.genres || !show.genres.length || show.genres.every((genre) => String(genre).toLowerCase() === "anime"))) {
+      show.genres = (jikan.genres || []).map((genre) => genre.name).filter(Boolean);
+      show.genre = show.genres[0] || show.genre;
+    }
+  }
+  return show;
+}
+
+async function hydrateCanonicalAnimeMetadata(show) {
+  if (!show || show._canonicalMetadataLoaded) return show;
+  const cacheKey = show.anilistId
+    ? `anilist-${show.anilistId}`
+    : `title-${normalizeTitle(show.romajiTitle || show.title)}`;
+  const cached = readAnimeMetadataCache(cacheKey);
+  if (cached) {
+    applyCanonicalAnimeMetadata(show, cached);
+    show._canonicalMetadataLoaded = true;
+    return show;
+  }
+
+  let media = null;
+  try {
+    const endpoint = show.anilistId
+      ? `./api/anilist/media?id=${encodeURIComponent(show.anilistId)}`
+      : `./api/anilist/search?q=${encodeURIComponent(show.romajiTitle || show.title || "")}`;
+    const response = await fetchWithTimeout(endpoint, { cache: "no-store" }, 12000);
+    const payload = response.ok ? await response.json() : null;
+    media = payload?.media || null;
+    if (media && !show.anilistId) {
+      const candidate = {
+        title: media.title?.english || media.title?.romaji || media.title?.native || "",
+        romajiTitle: media.title?.romaji || "",
+        nativeTitle: media.title?.native || ""
+      };
+      if (titleMatchScore(candidate, show) < 65) media = null;
+    }
+  } catch { /* Jikan remains available below. */ }
+
+  let malId = media?.idMal || show.malId;
+  let jikan = null;
+  if (!malId) {
+    try {
+      const response = await fetchWithTimeout(
+        `./api/jikan/search?q=${encodeURIComponent(show.romajiTitle || show.title || "")}`,
+        { cache: "no-store" },
+        15000
+      );
+      const payload = response.ok ? await response.json() : null;
+      const matches = Array.isArray(payload?.data) ? payload.data : [];
+      const best = matches
+        .map((entry) => ({
+          entry,
+          score: titleMatchScore({
+            title: entry.title_english || entry.title || "",
+            romajiTitle: entry.title || "",
+            nativeTitle: entry.title_japanese || ""
+          }, show)
+        }))
+        .sort((a, b) => b.score - a.score)[0];
+      if (best?.score >= 65) malId = best.entry.mal_id;
+    } catch { /* Animated fallback remains available. */ }
+  }
+  if (malId) {
+    show.malId = malId;
+    try {
+      const response = await fetchWithTimeout(`./api/jikan/full?id=${encodeURIComponent(malId)}`, { cache: "no-store" }, 15000);
+      const payload = response.ok ? await response.json() : null;
+      jikan = payload?.data || null;
+    } catch { /* Keep AniList metadata when Jikan is rate-limited. */ }
+  }
+
+  const data = { media, jikan };
+  applyCanonicalAnimeMetadata(show, data);
+  if (media || jikan) writeAnimeMetadataCache(cacheKey, data);
+  show._canonicalMetadataLoaded = true;
+  state.shows = state.shows.map((entry) => entry.id === show.id ? show : entry);
+  return show;
+}
 
 function applyAniListExtras(show, data) {
   if (!show || !data) return;
@@ -1878,9 +2041,9 @@ function applyAniListExtras(show, data) {
     // AniList lists episodes newest-first and embeds the number in the title, so
     // key them by parsed episode number for reliable matching against our list.
     const byNum = {};
-    data.episodes.forEach((e) => {
+    data.episodes.forEach((e, index) => {
       const m = /episode\s*(\d+)/i.exec(e.title || "");
-      const n = m ? Number(m[1]) : null;
+      const n = Number(e.episode || e.number || (m ? m[1] : index + 1));
       if (n && !byNum[n]) byNum[n] = e;
     });
     show.streamingEpisodesByNum = byNum;
@@ -1898,25 +2061,55 @@ function cleanEpisodeTitle(raw, num) {
 
 async function fetchAniListShowExtras(show) {
   const id = show && show.anilistId;
-  if (!id) return;
-  const key = String(id);
+  const malId = show && show.malId;
+  if (!id && !malId) return;
+  const key = String(id || `mal-${malId}`);
   if (_showExtrasCache.has(key)) { applyAniListExtras(show, _showExtrasCache.get(key)); return; }
   if (_showExtrasInFlight.has(key)) return;
   _showExtrasInFlight.add(key);
+
   const query = `query($id:Int){ Media(id:$id, type:ANIME){ bannerImage streamingEpisodes{ title thumbnail } } }`;
   try {
-    const res = await fetch("https://graphql.anilist.co", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ query, variables: { id: Number(id) } })
+    const [aniResp, jikanResp] = await Promise.allSettled([
+      id ? fetch("https://graphql.anilist.co", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ query, variables: { id: Number(id) } })
+      }).then(r => r.json()) : Promise.resolve(null),
+      malId ? fetch(`./api/jikan/episodes?id=${encodeURIComponent(malId)}`).then(r => r.json()) : Promise.resolve(null)
+    ]);
+
+    const media = (aniResp.status === "fulfilled" && aniResp.value) ? aniResp.value.data?.Media : null;
+    const jikanEps = (jikanResp.status === "fulfilled" && jikanResp.value) ? jikanResp.value.data : null;
+
+    if (!media && !jikanEps) return;
+
+    const mergedEpisodes = new Map();
+    (Array.isArray(jikanEps) ? jikanEps : []).forEach((ep, index) => {
+      const number = Number(ep.episode || index + 1) || index + 1;
+      mergedEpisodes.set(number, {
+        episode: number,
+        title: ep.title || ep.title_japanese || `Episode ${number}`,
+        titleJapanese: ep.title_japanese || "",
+        aired: ep.aired || "",
+        thumbnail: ep.thumbnail || ep.image || ""
+      });
     });
-    if (!res.ok) return;
-    const media = (await res.json())?.data?.Media;
-    if (!media) return;
+    (media?.streamingEpisodes || []).forEach((ep, index) => {
+      const match = /episode\s*(\d+)/i.exec(ep.title || "");
+      const number = Number(match ? match[1] : index + 1) || index + 1;
+      const existing = mergedEpisodes.get(number) || { episode: number, title: "" };
+      mergedEpisodes.set(number, {
+        ...existing,
+        title: existing.title || ep.title || `Episode ${number}`,
+        thumbnail: ep.thumbnail || existing.thumbnail || ""
+      });
+    });
     const data = {
-      banner: media.bannerImage || "",
-      episodes: (media.streamingEpisodes || []).map((e) => ({ title: e.title || "", thumbnail: e.thumbnail || "" }))
+      banner: media?.bannerImage || "",
+      episodes: Array.from(mergedEpisodes.values()).sort((a, b) => a.episode - b.episode)
     };
+
     _showExtrasCache.set(key, data);
     applyAniListExtras(show, data);
   } catch { /* offline / rate-limited — keep existing art */ } finally {
@@ -4178,19 +4371,21 @@ async function hydrateOpenShowDetails(show, target = {}, openToken = "") {
       if (state.activeOpenToken !== openToken || state.activeShow?.id !== show.id) return;
       try {
         ensureFranchiseShowsInCatalog(show);
+        syncWatchHeading(show);
+        const descriptionNode = document.querySelector("#watchDescription");
+        if (descriptionNode) descriptionNode.textContent = show.description || "";
         renderEpisodeList(show);
         refreshFocusables();
       } catch (error) { /* non-fatal */ }
     };
+    const canonicalMetadata = Promise.resolve(hydrateCanonicalAnimeMetadata(show)).then(refreshSeasonsIfActive);
     await Promise.allSettled([
       isAniPubShow(show)  ? hydrateAniPubEpisodes(show)  : Promise.resolve(show),
       isJimovShow(show)   ? hydrateJimovEpisodes(show)   : Promise.resolve(show),
       // For scrapled/metadata-only shows, fan out title search to all sources
       (!isNativeSource ? Promise.resolve(enrichShowFromAllSources(show)) : Promise.resolve(show)).then(refreshSeasonsIfActive),
-      // AniList franchise/relations — refresh the Seasons control as soon as it lands
-      Promise.resolve(hydrateShowAniListFranchise(show)).then(refreshSeasonsIfActive),
-      // AniList HQ banner backdrop + per-episode titles/thumbnails
-      Promise.resolve(fetchAniListShowExtras(show)).then(refreshSeasonsIfActive),
+      canonicalMetadata.then(() => hydrateShowAniListFranchise(show)).then(refreshSeasonsIfActive),
+      canonicalMetadata.then(() => fetchAniListShowExtras(show)).then(refreshSeasonsIfActive),
       // TioAnime slug resolution — stores show.tioAnimeSlug for episode playback
       hydrateTioAnimeSlug(show)
     ]);
@@ -4689,10 +4884,18 @@ function resetVideoFrame() {
   `;
 }
 
-function currentEpisodeLabel() {
-  const selected = state.activeEpisode;
+function selectedSeasonLabel(selected = state.activeEpisode) {
+  const season = selected?.season || {};
+  const seasonNumber = Number(season.season || season.seasonNumber || selected?.seasonIndex + 1) || 1;
+  const title = String(season.title || "").trim();
+  if (!title || /^(?:episodes?|season)$/i.test(title)) return `Season ${seasonNumber}`;
+  return title;
+}
+
+function currentEpisodeLabel(selected = state.activeEpisode) {
   if (!selected) return getShowTitle(state.activeShow) || "Selected anime";
-  return `${selected.season?.title || `Season ${selected.season?.season || selected.seasonIndex + 1}`} Episode ${selected.episode?.episode || selected.episodeIndex + 1}`;
+  const episodeNumber = Number(selected.episode?.episode || selected.episode?.number || selected.episodeIndex + 1) || 1;
+  return `${selectedSeasonLabel(selected)} Episode ${episodeNumber}`;
 }
 
 function baseSeasonTitle(title) {
@@ -4816,15 +5019,19 @@ function renderDetailMeta(show) {
     genresWrap.hidden = genres.length === 0;
   }
 
-  // Cast — hidden gracefully when no data source provides it.
+  // Cast/studios/producers — hidden gracefully when no data source provides it.
   const castWrap = document.querySelector("#watchCast");
   if (castWrap) {
     const cast = (show.cast || show.actors || show.characters || [])
       .map((c) => (typeof c === "string" ? c : c?.name))
-      .filter(Boolean)
-      .slice(0, 3);
-    castWrap.innerHTML = cast.map((c) => `<span class="watch-pill watch-pill-cast">${escapeHtml(String(c))}</span>`).join("");
-    castWrap.hidden = cast.length === 0;
+      .filter(Boolean);
+    const credits = [
+      ...cast,
+      ...(show.studios || []).map((name) => `Studio: ${name}`),
+      ...(show.producers || []).map((name) => `Producer: ${name}`)
+    ].filter((value, index, values) => values.indexOf(value) === index).slice(0, 5);
+    castWrap.innerHTML = credits.map((c) => `<span class="watch-pill watch-pill-cast">${escapeHtml(String(c))}</span>`).join("");
+    castWrap.hidden = credits.length === 0;
   }
 
   updateTrailerButton(show);
@@ -4847,8 +5054,9 @@ function syncWatchHeading(show = state.activeShow, season = null) {
   const backdrop = document.querySelector("#watchBackdrop");
   if (backdrop) {
     const art = getWatchBackdropArtwork(show, activeSeason);
-    backdrop.style.backgroundImage = art ? `url("${art}")` : "";
+    backdrop.style.backgroundImage = art ? `url("${art}")` : animeBackdropFallback(show);
     backdrop.classList.toggle("has-art", Boolean(art));
+    backdrop.classList.toggle("has-fallback-art", !art);
     // Always cinematic; .has-art only switches image-backdrop vs gradient fallback.
     overlay?.classList.add("cinematic");
     overlay?.classList.toggle("has-backdrop-art", Boolean(art));
@@ -4865,7 +5073,7 @@ function compactMetadataLine(show = {}) {
 }
 
 // Episode title without the redundant "Episode N" when that's all there is.
-function episodeEntryTitle(episode = {}, index = 0) {
+function episodeEntryTitle(episode = {}, index = 0, show = state.activeShow || {}) {
   const raw = String(episode.title || "").trim();
   const num = episode.episode || index + 1;
   if (raw && !/^(episode|ep|cap[ií]tulo)\s*\d+$/i.test(raw)) return raw;
@@ -4889,8 +5097,7 @@ function episodeAirDateLabel(episode = {}) {
 }
 
 function episodeThumb(episode = {}, season = {}, show = {}) {
-  return hqImage(episode.image || episode.thumbnail || episode.still || episode.snapshot ||
-         season.image || show.image || show.banner || "");
+  return hqImage(episode.image || episode.thumbnail || episode.still || episode.snapshot || "");
 }
 
 // Linear list of seasons for the dropdown + Prev/Next, spanning the franchise
@@ -4903,14 +5110,11 @@ function buildSeasonNav(show, seasons) {
     let localIndex = -1;
     if (!related) {
       localIndex = seasons.indexOf(entry);
-      if (localIndex < 0) localIndex = seasons.findIndex((s) => Number(s.season) === Number(entry.season));
+      if (localIndex < 0) localIndex = seasons.findIndex((s) => Number(s.season) === Number(entry.season) && s.part === entry.part);
       if (localIndex < 0 && !franchise.length) localIndex = i;
     }
-    // Dropdown reads cleanest as "Season N" (the full title lives on the left);
-    // movies/OVAs keep their own name.
-    const label = entry.formatBadge
-      ? (entry.title || entry.formatBadge)
-      : `Season ${entry.season || i + 1}`;
+    // Use the title from the normalization system if available (it has the "Part X" info)
+    const label = entry.title || (entry.formatBadge ? entry.formatBadge : `Season ${entry.season || i + 1}`);
     return {
       label,
       epCount: entry.episodes?.length || 0,
@@ -4928,7 +5132,7 @@ function renderEpisodeList(show) {
   if (!episodeList) return;
   // Lazily pull AniList per-episode titles/thumbnails + HQ banner once the show's
   // anilistId is known (for scraped shows it arrives after source enrichment).
-  if (show.anilistId && !show._extrasTried && !show.streamingEpisodes) {
+  if ((show.anilistId || show.malId) && !show._extrasTried && !show.streamingEpisodes) {
     show._extrasTried = true;
     fetchAniListShowExtras(show).then(() => {
       if (state.activeShow?.id === show.id && (show.streamingEpisodes || show.banner)) renderEpisodeList(show);
@@ -5003,12 +5207,13 @@ function renderEpisodeList(show) {
           const epMeta = (show.streamingEpisodesByNum && show.streamingEpisodesByNum[num]) || null;
           const title = (epMeta && epMeta.title)
             ? cleanEpisodeTitle(epMeta.title, num)
-            : episodeEntryTitle(episode, episodeIndex);
+            : episodeEntryTitle(episode, episodeIndex, show);
           const thumb = hqImage(
-            episode.image || episode.thumbnail || episode.still ||
-            (epMeta && epMeta.thumbnail) || activeSeason?.image || show.image || show.banner || ""
+            episode.image || episode.thumbnail || episode.still || episode.snapshot ||
+            (epMeta && epMeta.thumbnail) || ""
           );
-          const date = episodeAirDateLabel(episode);
+          const date = episodeAirDateLabel({ ...episode, aired: episode.aired || epMeta?.aired });
+          const fallbackHue = (stableVisualHue(show.id || show.title) + (Number(num) * 19)) % 360;
           const locked = isEpisodeUnavailable(episode);
           const selected = isActiveEpisode(state.activeSeasonIndex, episodeIndex);
           const metaLine = date || episodeDisplaySubtitle(episode);
@@ -5028,8 +5233,8 @@ function renderEpisodeList(show) {
           <button class="ep-row focusable ${locked ? "is-locked" : ""} ${selected ? "is-selected" : ""} ${watchCls}"
                   data-season-index="${state.activeSeasonIndex}" data-episode-index="${episodeIndex}"
                   data-ep-search="${escapeHtml(search)}">
-            <span class="ep-thumb">
-              ${thumb ? `<img class="ep-thumb-img" src="${escapeHtml(thumb)}" alt="" loading="lazy" onerror="this.style.display='none'">` : ""}
+            <span class="ep-thumb ${thumb ? "has-image" : "is-placeholder"}" style="--episode-hue:${fallbackHue}">
+              ${thumb ? `<img class="ep-thumb-img" src="${escapeHtml(thumb)}" alt="" loading="lazy" onerror="this.style.display='none';this.parentElement.classList.add('is-placeholder')">` : ""}
               <span class="ep-thumb-num">${escapeHtml(String(num))}</span>
               <span class="ep-thumb-play" aria-hidden="true">▶</span>
               ${progressBar}
@@ -5428,9 +5633,17 @@ function renderSourcePickerIn(frame) {
   const serverChecks = episode.serverChecks || {};
   const isPending = Boolean(episode.sourceOptionsPending);
   const show = state.activeShow;
-  const poster = getWatchPosterArtwork(show, state.activeEpisode?.season);
+  const episodeNumber = Number(episode.episode || episode.number || 1) || 1;
+  const epMeta = show?.streamingEpisodesByNum?.[episodeNumber] || null;
+  const episodeTitle = epMeta?.title
+    ? cleanEpisodeTitle(epMeta.title, episodeNumber)
+    : episodeEntryTitle(episode, Math.max(0, episodeNumber - 1));
+  const poster = hqImage(
+    episode.image || episode.thumbnail || episode.still || episode.snapshot ||
+    epMeta?.thumbnail || getWatchPosterArtwork(show, state.activeEpisode?.season)
+  );
   const epLabel = state.activeEpisode
-    ? `S${state.activeEpisode.season?.season || state.activeEpisode.seasonIndex + 1} E${(episode.episode || episode.number || 1)} · ${escapeHtml(episode.title || `Episode ${episode.episode || 1}`)}`
+    ? `S${state.activeEpisode.season?.season || state.activeEpisode.seasonIndex + 1} E${episodeNumber} · ${escapeHtml(episodeTitle)}`
     : "";
 
   // Track which source IDs are covered by known server definitions
@@ -6902,19 +7115,24 @@ function ensureFranchiseShowsInCatalog(show) {
   const franchise = show.anilistFranchise;
   if (!franchise) return;
 
-  const allEntries = [
-    ...franchise.tvSeasons,
-    ...franchise.movies,
-    ...franchise.ovas,
-    ...franchise.onas,
-    ...franchise.specials,
-  ];
+  const allEntries = Array.isArray(franchise.groups)
+    ? franchise.groups.flatMap((group) => Array.isArray(group?.items) ? group.items : [])
+    : [
+        ...(Array.isArray(franchise.tvSeasons) ? franchise.tvSeasons : []),
+        ...(Array.isArray(franchise.movies) ? franchise.movies : []),
+        ...(Array.isArray(franchise.ovas) ? franchise.ovas : []),
+        ...(Array.isArray(franchise.onas) ? franchise.onas : []),
+        ...(Array.isArray(franchise.specials) ? franchise.specials : []),
+        ...(Array.isArray(franchise.recaps) ? franchise.recaps : [])
+      ];
 
   const added = [];
+  const seenEntries = new Set();
   for (const entry of allEntries) {
     const aniId   = String(entry.anilistId || "");
     const extraId = String(entry.extraAnilistId || "");
-    if (!aniId) continue;
+    if (!aniId || seenEntries.has(aniId)) continue;
+    seenEntries.add(aniId);
 
     const syntheticId = `anilist-${aniId}`;
     const alreadyIn = state.shows.some(s =>
@@ -6962,37 +7180,46 @@ function ensureFranchiseShowsInCatalog(show) {
 }
 
 function getDetailSeasons(show) {
-  const inferredSeason = extractSeasonNumber(show?.title || show?.romajiTitle || show?.nativeTitle || "", 1);
-  const sourceSeasons = (show.seasons?.length ? show.seasons : groupEpisodesBySeason(show.episodes || []))
-    .map((season, index) => ({
-      ...season,
-      season: Number(season.season || season.seasonNumber || index + 1) || index + 1
-    }))
-    .sort((a, b) => Number(a.season || 0) - Number(b.season || 0));
-  if (sourceSeasons.length) {
-    return sourceSeasons.map((season, index) => {
-      const seasonNumber = sourceSeasons.length === 1 && inferredSeason > 1
-        ? inferredSeason
-        : season.season || index + 1;
-      return {
-        ...season,
-        season: seasonNumber,
-        title: `Season ${seasonNumber}`,
-        sourceTitle: show.title,
-        image: show.image,
-        episodes: clampSeasonEpisodes(repairEpisodeGaps(season.episodes || [], seasonNumber), show, season),
-        playable: (season.episodes || []).some((episode) => getEpisodeUrl(episode) || isExternalIframeEpisode(episode) || episode.streamResolver)
-      };
-    });
+  if (!show) return [];
+
+  // If we already have a list of episodes, we can use SeasonNormalization to group them
+  // if they aren't already grouped.
+  const rawEpisodes = show.episodes || [];
+  const sourceSeasons = show.seasons || [];
+
+  if (sourceSeasons.length > 0) {
+    return sourceSeasons.map((s, i) => ({
+      ...s,
+      season: s.season || i + 1,
+      title: s.title || `Season ${s.season || i + 1}`,
+      episodes: clampSeasonEpisodes(repairEpisodeGaps(s.episodes || [], s.season || i + 1), show, s)
+    }));
   }
 
-  // No real per-source seasons → this entry is one continuous anime. Never pull
-  // in same-titled remakes/adaptations as extra "seasons" (Doraemon bug). Show a
-  // single "Episodes" group with only this show's own episodes.
-  const seasonNumber = extractSeasonNumber(show.title, 1);
+  if (rawEpisodes.length > 0) {
+    // Attempt to group by season number in episodes
+    const grouped = groupEpisodesBySeason(rawEpisodes);
+    return grouped.map(s => ({
+      ...s,
+      episodes: clampSeasonEpisodes(repairEpisodeGaps(s.episodes || [], s.season), show, s)
+    }));
+  }
+
+  // Fallback: Use SeasonNormalization title parsing to determine identity
+  const parsed = SeasonNormalization.parseTitle(show.title || show.romajiTitle || "");
+  const seasonNumber = parsed.seasonNumber || extractSeasonNumber(show.title, 1);
+  const partNumber = parsed.partNumber;
+
+  let title = "Episodes";
+  if (parsed.isFinalChapters) title = "Final Chapters";
+  else if (parsed.isFinalSeason) title = "Final Season" + (partNumber ? ` Part ${partNumber}` : "");
+  else if (seasonNumber > 1) title = `Season ${seasonNumber}` + (partNumber ? ` Part ${partNumber}` : "");
+  else if (partNumber) title = `Part ${partNumber}`;
+
   return [{
     season: seasonNumber,
-    title: seasonNumber > 1 ? `Season ${seasonNumber}` : "Episodes",
+    part: partNumber,
+    title: title,
     sourceTitle: show.title,
     image: show.image,
     source: show.source,
@@ -7248,7 +7475,7 @@ async function playActiveShow(options = {}) {
   if (!url) {
     const selected = state.activeEpisode;
     const label = selected
-      ? `${selected.season?.title || `Season ${selected.seasonIndex + 1}`} Episode ${selected.episode?.episode || selected.episodeIndex + 1}`
+      ? currentEpisodeLabel(selected)
       : getShowTitle(show) || "Selected episode";
     renderPlayerPopupMessage(
       frame,
@@ -7654,9 +7881,7 @@ function renderEmbeddedAniPubPlayer(show, externalUrl) {
   const selected = state.activeEpisode;
   const episode = selected?.episode || {};
   const selectedSource = selected ? getSelectedEpisodeSource(episode) : null;
-  const label = selected
-    ? `${selected.season?.title || `Season ${selected.seasonIndex + 1}`} Episode ${selected.episode?.episode || selected.episodeIndex + 1}`
-    : getShowTitle(show);
+  const label = selected ? currentEpisodeLabel(selected) : getShowTitle(show);
   frame.innerHTML = `
     <div class="embedded-player-container anipub-embedded vidstream-player is-iframe">
       <div class="vid-player-stage iframe-wrapper">
@@ -7898,6 +8123,27 @@ async function copyExternalUrl(externalUrl) {
 
 function wireOpenButtons() {
   document.querySelectorAll("[data-open-show]").forEach((button) => {
+    const preload = () => {
+      const show = state.shows.find((entry) => String(entry.id) === String(button.dataset.openShow));
+      if (!show) return;
+      const knownBackdrop = getWatchBackdropArtwork(show);
+      if (knownBackdrop) {
+        const image = new Image();
+        image.decoding = "async";
+        image.src = knownBackdrop;
+      } else if (!show._metadataPreloadStarted) {
+        show._metadataPreloadStarted = true;
+        hydrateCanonicalAnimeMetadata(show).then(() => {
+          const resolvedBackdrop = getWatchBackdropArtwork(show);
+          if (!resolvedBackdrop) return;
+          const image = new Image();
+          image.decoding = "async";
+          image.src = resolvedBackdrop;
+        }).catch(() => {});
+      }
+    };
+    button.addEventListener("pointerenter", preload, { once: true, passive: true });
+    button.addEventListener("focus", preload, { once: true, passive: true });
     button.onclick = () => openShow(button.dataset.openShow, {
       seasonNumber: button.dataset.openSeason,
       episodeNumber: button.dataset.openEpisode

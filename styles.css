@@ -6897,6 +6897,10 @@ body.reduce-motion .ss-modal-detect { animation: none; }
   background-color: transparent;
   animation: watch-backdrop-zoom 26s ease-in-out 600ms both alternate;
 }
+.watch-backdrop.has-fallback-art {
+  background-size: cover;
+  background-position: center;
+}
 @keyframes watch-backdrop-zoom {
   from { transform: scale(1.02); }
   to   { transform: scale(1.12); }
@@ -7176,15 +7180,16 @@ body.reduce-motion .watch-stage-body { animation: none; }
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow: -1.6rem 0 3rem rgba(0,0,0,0.5);
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   overscroll-behavior: contain;
   scrollbar-width: none;
 }
 .watch-side::-webkit-scrollbar { display: none; }
 .watch-side .episode-list {
   flex: 1 1 auto;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* Two-tab selector (Seasons / Episodes) — two simple pills on a sticky bar that
@@ -7192,9 +7197,9 @@ body.reduce-motion .watch-stage-body { animation: none; }
    opaque so episodes never bleed through while scrolling. */
 .watch-side .detail-tabs.detail-tabs-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 7;
+  flex: 0 0 auto;
   gap: 0.5rem;
   margin: 0;
   padding: 0.85rem 0 0.7rem;
@@ -7226,13 +7231,20 @@ body.reduce-motion .watch-stage-body { animation: none; }
   box-shadow: 0 0.4rem 0.9rem rgba(138, 92, 255, 0.3);
 }
 .watch-side .detail-pane { display: none; }
-.watch-side .detail-pane.is-active { display: flex; flex-direction: column; min-height: 0; }
+.watch-side .detail-pane.is-active {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
 /* Only the Seasons/Episodes tabs stay pinned (solid, so nothing bleeds through).
    The season-nav scrolls with the list — having two stacked sticky bands was what
    left a gap that let episodes overlap the header. */
 .watch-side .detail-pane .ep-panel-head {
   position: static;
   z-index: auto;
+  flex: 0 0 auto;
   margin: 0 0 0.45rem;
   padding: 0.1rem 0.15rem 0.55rem;
   background: transparent;
@@ -7242,7 +7254,12 @@ body.reduce-motion .watch-stage-body { animation: none; }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
   gap: 0.6rem;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
 }
+.watch-side .season-card-grid::-webkit-scrollbar { display: none; }
 
 /* The video-frame is only a mount point for the fixed cinema player; in the
    detail view it occupies no space and its placeholder content stays hidden. */
@@ -7445,7 +7462,19 @@ body.has-embedded-player .watch-side {
 .ep-search-icon { position: absolute; right: 1rem; color: rgba(255,255,255,0.55); font-size: 1.05rem; pointer-events: none; }
 
 /* Episode rows. */
-.ep-rows { display: flex; flex-direction: column; gap: 0.35rem; }
+.ep-rows {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 0.75rem;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.ep-rows::-webkit-scrollbar { display: none; }
 .ep-row {
   display: grid;
   grid-template-columns: 7rem 1fr;
@@ -7460,6 +7489,8 @@ body.has-embedded-player .watch-side {
   text-align: left;
   cursor: pointer;
   transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
+  content-visibility: auto;
+  contain-intrinsic-size: 5.4rem;
 }
 .ep-row:is(:hover, :focus-visible) { background: rgba(255,255,255,0.07); outline: 0; }
 .ep-row.is-selected { background: rgba(138, 92, 255, 0.16); border-color: rgba(138, 92, 255, 0.5); }
@@ -7474,6 +7505,18 @@ body.has-embedded-player .watch-side {
   background: linear-gradient(135deg, #1b1d2e, #11121d);
   display: grid;
   place-items: center;
+}
+.ep-thumb.is-placeholder {
+  background:
+    radial-gradient(circle at 72% 24%, hsla(var(--episode-hue), 86%, 64%, 0.42), transparent 38%),
+    linear-gradient(135deg, hsl(var(--episode-hue), 42%, 22%), #10111d 68%);
+}
+.ep-thumb.is-placeholder::after {
+  content: "ZENKAI";
+  color: rgba(255,255,255,0.16);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
 }
 .ep-thumb-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .ep-thumb-num {
