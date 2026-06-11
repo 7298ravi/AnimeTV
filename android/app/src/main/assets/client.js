@@ -4869,6 +4869,7 @@ function closeShow() {
 }
 
 function stopActivePlayback() {
+  teardownPlayerAutoHide();
   const frame = document.querySelector("#videoFrame");
   if (!frame) return;
   frame.querySelectorAll("video").forEach((video) => {
@@ -6311,6 +6312,54 @@ function wireVidstreamControls(frame, video, episode, url, tracks = []) {
   updateToggle();
   updateVolume();
   updateTime();
+  setupPlayerAutoHide(frame);
+}
+
+// ── Player chrome auto-hide ──────────────────────────────────────────────────
+// In the cinematic player, fade out ALL chrome (topbar with the back/✕ button,
+// the control bar, the cursor) after 2s of inactivity, and bring it back on any
+// tap / mouse-move / key press. The back button is only hidden, never disabled —
+// a single tap always reveals it again. The source picker and loading/message
+// states are never auto-hidden so the user can always act on them.
+let _playerIdleTimer = null;
+let _playerIdleKeyHandler = null;
+const PLAYER_IDLE_MS = 2000;
+
+function setupPlayerAutoHide(frame) {
+  const shell = frame?.querySelector(".vidstream-player");
+  teardownPlayerAutoHide();
+  if (!shell) return;
+
+  const canHide = () =>
+    shell.isConnected &&
+    shell.classList.contains("is-cinema") &&
+    !shell.classList.contains("is-popup-message") &&
+    !shell.querySelector(".source-picker");
+
+  const hide = () => { if (canHide()) shell.classList.add("is-ui-idle"); };
+  const reveal = () => {
+    shell.classList.remove("is-ui-idle"); // back button + controls reappear
+    clearTimeout(_playerIdleTimer);
+    _playerIdleTimer = window.setTimeout(hide, PLAYER_IDLE_MS);
+  };
+
+  // Pointer/touch listeners live on the shell, so they die with the DOM when the
+  // player re-renders or closes. Key activity is global while the player is open.
+  ["pointermove", "pointerdown", "touchstart", "wheel"].forEach((evt) =>
+    shell.addEventListener(evt, reveal, { passive: true })
+  );
+  _playerIdleKeyHandler = reveal;
+  document.addEventListener("keydown", _playerIdleKeyHandler);
+
+  reveal(); // start visible, then begin the 2s countdown
+}
+
+function teardownPlayerAutoHide() {
+  if (_playerIdleTimer) { clearTimeout(_playerIdleTimer); _playerIdleTimer = null; }
+  if (_playerIdleKeyHandler) {
+    document.removeEventListener("keydown", _playerIdleKeyHandler);
+    _playerIdleKeyHandler = null;
+  }
 }
 
 function getActiveDownloadUrl(currentUrl = "") {

@@ -4844,6 +4844,28 @@ body.player-cinema-open .close-button {
   display: none;
 }
 
+/* ── Auto-hide chrome after 2s of inactivity ──
+   In cinema playback the topbar (back/✕ + title) and the control bar fade out
+   after a short idle, then reappear on any tap / mouse-move / key press. The
+   back button is only hidden — never disabled — so a single tap brings it back.
+   The source picker and loading/message states keep .is-ui-idle off, so they
+   always stay visible. */
+.vidstream-player.is-cinema .vid-topbar,
+.vidstream-player.is-cinema .vid-controls,
+.vidstream-player.is-cinema .vid-exit-button {
+  transition: opacity 0.28s ease, visibility 0.28s ease;
+}
+.vidstream-player.is-cinema.is-ui-idle .vid-topbar,
+.vidstream-player.is-cinema.is-ui-idle .vid-controls,
+.vidstream-player.is-cinema.is-ui-idle .vid-exit-button {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.vidstream-player.is-cinema.is-ui-idle {
+  cursor: none;
+}
+
 /* Fullscreen button active state — highlight while in native fullscreen */
 :fullscreen [data-player-fullscreen],
 :-webkit-full-screen [data-player-fullscreen] {
