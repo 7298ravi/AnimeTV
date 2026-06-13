@@ -13,9 +13,18 @@ function readUiPreferences() {
     metadataDetail: true,
     subtitleTranslation: true,
     titleLanguage: "romaji",  // "english" | "romaji"
+    playerInterface: "custom" // "custom" | "native"
   };
   try {
-    return { ...defaults, ...JSON.parse(localStorage.getItem(APP_UI_PREFS_KEY) || "{}") };
+    let parsed = JSON.parse(localStorage.getItem(APP_UI_PREFS_KEY) || "{}");
+    const migrationKey = "zenkaitv:migrated-player-interface:v7";
+    if (localStorage.getItem(migrationKey) !== "1") {
+      parsed.playerInterface = "custom";
+      parsed.playerEngine = "apk";
+      localStorage.setItem(APP_UI_PREFS_KEY, JSON.stringify({ ...defaults, ...parsed }));
+      localStorage.setItem(migrationKey, "1");
+    }
+    return { ...defaults, ...parsed };
   } catch (error) {
     return defaults;
   }
