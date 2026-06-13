@@ -13,13 +13,13 @@ function readUiPreferences() {
     metadataDetail: true,
     subtitleTranslation: true,
     titleLanguage: "romaji",  // "english" | "romaji"
-    playerInterface: "native" // "custom" | "native"
+    playerInterface: "custom" // "custom" | "native"
   };
   try {
     let parsed = JSON.parse(localStorage.getItem(APP_UI_PREFS_KEY) || "{}");
-    const migrationKey = "zenkaitv:migrated-player-interface:v6";
+    const migrationKey = "zenkaitv:migrated-player-interface:v8";
     if (localStorage.getItem(migrationKey) !== "1") {
-      parsed.playerInterface = "native";
+      parsed.playerInterface = "custom";
       parsed.playerEngine = "native";
       localStorage.setItem(APP_UI_PREFS_KEY, JSON.stringify({ ...defaults, ...parsed }));
       localStorage.setItem(migrationKey, "1");
