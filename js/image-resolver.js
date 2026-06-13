@@ -50,8 +50,7 @@ const ImageResolver = (function () {
     if (_failedMemory) return _failedMemory;
     _failedMemory = new Set();
     try {
-      const raw = JSON.parse(localStorage.getItem(FAILED_CACHE_KEY) || "[]");
-      if (Array.isArray(raw)) raw.forEach((u) => _failedMemory.add(u));
+      localStorage.removeItem(FAILED_CACHE_KEY);
     } catch { /* ignore */ }
     return _failedMemory;
   }
@@ -61,10 +60,6 @@ const ImageResolver = (function () {
     const set = failedSet();
     if (set.has(u)) return;
     set.add(u);
-    try {
-      const arr = [...set].slice(-FAILED_CACHE_MAX);
-      localStorage.setItem(FAILED_CACHE_KEY, JSON.stringify(arr));
-    } catch { /* quota — memory copy still works this session */ }
     debug("marked broken image, will skip from now on:", u);
   }
   function isImageFailed(url) {
@@ -174,7 +169,20 @@ const ImageResolver = (function () {
     } else {
       reason += " year(n/a)";
     }
-    const confidence = Math.max(0, Math.min(100, tScore + yearAdj));
+
+    let genreAdj = 0;
+    const genres = candidate.genre_ids || [];
+    if (Array.isArray(genres) && genres.length > 0) {
+      if (genres.includes(16)) {
+        genreAdj = 15;
+        reason += " genre(animation)=+15";
+      } else {
+        genreAdj = -15;
+        reason += " genre(non-animation)=-15";
+      }
+    }
+
+    const confidence = Math.max(0, Math.min(100, tScore + yearAdj + genreAdj));
     return { confidence, reason, tScore };
   }
 
@@ -187,17 +195,17 @@ const ImageResolver = (function () {
     const animeSeasonNum = Number(anime.seasonNumber || 0) || null;
     const animeYear = Number(anime.seasonYear || anime.year || 0) || null;
 
-    // 1) Match by air-date year (most reliable for split-cour anime).
+    // 1) Match by season number when it lines up with a TMDB season.
+    if (animeSeasonNum) {
+      const bySeason = real.find((s) => Number(s.season_number) === animeSeasonNum);
+      if (bySeason) return { season: bySeason, reason: "season number match" };
+    }
+    // 2) Match by air-date year (most reliable for split-cour anime).
     if (animeYear) {
       const byYear = real
         .map((s) => ({ s, diff: Math.abs((yearOf(s.air_date) || 9999) - animeYear) }))
         .sort((a, b) => a.diff - b.diff)[0];
       if (byYear && byYear.diff <= 1) return { season: byYear.s, reason: `year match (Δ${byYear.diff})` };
-    }
-    // 2) Match by season number when it lines up with a TMDB season.
-    if (animeSeasonNum) {
-      const bySeason = real.find((s) => Number(s.season_number) === animeSeasonNum);
-      if (bySeason) return { season: bySeason, reason: "season number match" };
     }
     // 3) Uncertain — don't guess wrong; caller will keep AniList fallback for
     //    season-specific art but can still use show-level poster/backdrop.

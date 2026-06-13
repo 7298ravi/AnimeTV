@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>ZenkaiTV Video Player</title>
+  <link href="https://vjs.zencdn.net/7.20.3/video-js.css" rel="stylesheet" />
   <style>
     html,
     body {
@@ -87,9 +88,10 @@
 
       var originalHost = streamProxyHost(uri);
       var sourceUrl = streamTypeFromUrl(uri) === "video/mp4" ? proxyUrl(uri) : uri;
+      var useControls = params.get("controls") === "1" || params.get("controls") === "true";
       var player = videojs("player", {
         fluid: true,
-        controls: false,
+        controls: useControls,
         autoplay: true,
         preload: "auto",
         responsive: true,

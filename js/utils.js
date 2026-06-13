@@ -13,6 +13,7 @@ function readUiPreferences() {
     metadataDetail: true,
     subtitleTranslation: true,
     titleLanguage: "romaji",  // "english" | "romaji"
+    playerInterface: "custom" // "custom" | "native"
   };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(APP_UI_PREFS_KEY) || "{}") };

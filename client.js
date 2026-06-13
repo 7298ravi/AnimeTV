@@ -4334,6 +4334,13 @@ function renderSettings() {
           </div>
         </div>
         <div class="settings-line">
+          <span>Controls style <small>Use ZenkaiTV overlay or the player's own clean controls</small></span>
+          <div class="settings-row settings-segment">
+            <button class="settings-choice focusable ${ui.playerInterface !== "native" ? "is-selected" : ""}" data-player-interface="custom" type="button">ZenkaiTV</button>
+            <button class="settings-choice focusable ${ui.playerInterface === "native" ? "is-selected" : ""}" data-player-interface="native" type="button">Clean / Native</button>
+          </div>
+        </div>
+        <div class="settings-line">
           <span>Video fit <small>Same contain, cover, and fill modes as the APK player</small></span>
           <div class="settings-row settings-segment">
             ${["contain", "cover", "fill"].map((fit) => `
@@ -4485,6 +4492,14 @@ function wireSettingsButtons() {
       saveUiPreferences({ playerEngine: button.dataset.playerEngine || "apk" });
       renderSettings();
       showToast("Player setting saved");
+    });
+  });
+
+  settingsGrid.querySelectorAll("[data-player-interface]").forEach((button) => {
+    button.addEventListener("click", () => {
+      saveUiPreferences({ playerInterface: button.dataset.playerInterface || "custom" });
+      renderSettings();
+      showToast("Player controls style saved");
     });
   });
 
@@ -6513,12 +6528,15 @@ function playerFitScaleValue(fit = state.uiPreferences.playerFit || "contain") {
   return 0;
 }
 
-function buildApkPlayerUrl(url = "") {
+function buildApkPlayerUrl(url = "", useNativeControls = false) {
   const playerUrl = new URL("./player/player.html", location.href);
   playerUrl.searchParams.set("v", "2");
   playerUrl.searchParams.set("src", resolveSourceEndpoint(url));
   playerUrl.searchParams.set("audio", getLanguagePreferences().audio || "");
   playerUrl.searchParams.set("quality", String(Number(state.uiPreferences.playerQuality || 0)));
+  if (useNativeControls || state.uiPreferences.playerInterface === "native") {
+    playerUrl.searchParams.set("controls", "1");
+  }
   const hash = streamTypeFromUrl(url) === "dash"
     ? "#dash"
     : streamTypeFromUrl(url) === "file"
@@ -7477,7 +7495,6 @@ async function resolveTioAnimeSlugFromCatalog(show) {
 let visibleMetadataWarmGeneration = 0;
 
 function warmVisibleShowMetadata(shows = state.shows, limit = 64) {
-  if (typeof AdultMode !== "undefined" && AdultMode.isEnabled()) return;
   const generation = ++visibleMetadataWarmGeneration;
   const prioritized = [
     ...buildLatestEpisodesList(Math.min(HOME_CARD_LIMIT, limit)),
@@ -7485,7 +7502,7 @@ function warmVisibleShowMetadata(shows = state.shows, limit = 64) {
   ];
   const queue = [...new Map(
     prioritized
-      .filter((show) => show && (typeof AdultMode === "undefined" || !AdultMode.isAdultContent(show)))
+      .filter((show) => show)
       .map((show) => [String(show.id || getShowKey(show)), show])
   ).values()].slice(0, limit);
   let cursor = 0;
@@ -7494,18 +7511,33 @@ function warmVisibleShowMetadata(shows = state.shows, limit = 64) {
   const worker = async () => {
     while (cursor < queue.length && generation === visibleMetadataWarmGeneration) {
       const show = queue[cursor++];
-      if (!show || show._metadataPreloadComplete) continue;
+      if (!show || show._metadataPreloadComplete || show.adultDetailsLoaded) continue;
       show._metadataPreloadStarted = true;
       try {
-        await hydrateCanonicalAnimeMetadata(show);
-        await Promise.allSettled([
-          fetchAniListShowExtras(show),
-          enrichTmdbImages(show)
-        ]);
-        applyTmdbEpisodeMetadata(show);
-        show._metadataPreloadComplete = true;
+        if (typeof AdultMode !== "undefined" && AdultMode.isAdultContent(show)) {
+          await hydrateAdultShowDetails(show);
+          show.adultDetailsLoaded = true;
+          show._metadataPreloadComplete = true;
+        } else {
+          await hydrateCanonicalAnimeMetadata(show);
+          await Promise.allSettled([
+            fetchAniListShowExtras(show),
+            enrichTmdbImages(show)
+          ]);
+          applyTmdbEpisodeMetadata(show);
+
+          const isNativeSource = isAniPubShow(show) || isJimovShow(show);
+          await Promise.allSettled([
+            isAniPubShow(show)  ? hydrateAniPubEpisodes(show)  : Promise.resolve(show),
+            isJimovShow(show)   ? hydrateJimovEpisodes(show)   : Promise.resolve(show),
+            (!isNativeSource ? Promise.resolve(enrichShowFromAllSources(show)) : Promise.resolve(show)),
+            hydrateShowAniListFranchise(show),
+            hydrateTioAnimeSlug(show)
+          ]);
+          show._metadataPreloadComplete = true;
+        }
         changed = true;
-      } catch {
+      } catch (err) {
         show._metadataPreloadStarted = false;
       }
     }
@@ -8346,12 +8378,14 @@ function renderDirectVideoPlayer(frame, url, episode) {
     saveUiPreferences({ playerFit: "cover" });
   }
   const fit = state.uiPreferences.playerFit || "cover";
+  const useNativeControls = state.uiPreferences.playerInterface === "native";
+
   frame.innerHTML = `
-    <div class="video-player-shell vidstream-player fit-${escapeHtml(fit)}" data-stream-type="${escapeHtml(streamType || "direct")}">
+    <div class="video-player-shell vidstream-player fit-${escapeHtml(fit)} ${useNativeControls ? "is-iframe" : ""}" data-stream-type="${escapeHtml(streamType || "direct")}">
       <div class="vid-player-stage">
         ${useApkPlayer
-          ? `<iframe id="animePlayerFrame" class="apk-video-frame" src="${escapeHtml(buildApkPlayerUrl(url))}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer" title="ZenkaiTV video player"></iframe>`
-          : `<video id="animePlayer" autoplay playsinline x-webkit-airplay="allow" crossorigin="anonymous">
+          ? `<iframe id="animePlayerFrame" class="apk-video-frame" src="${escapeHtml(buildApkPlayerUrl(url, useNativeControls))}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer" title="ZenkaiTV video player"></iframe>`
+          : `<video id="animePlayer" ${useNativeControls ? "controls" : ""} autoplay playsinline x-webkit-airplay="allow" crossorigin="anonymous">
               ${spanishTrack ? `<track kind="subtitles" srclang="es" label="Español" src="${escapeHtml(spanishTrack.url)}" default>` : ""}
             </video>`}
         <div class="vid-loader" aria-live="polite">
@@ -8365,7 +8399,7 @@ function renderDirectVideoPlayer(frame, url, episode) {
         ${renderVidstreamTopbar(currentEpisodeLabel())}
         <div class="translated-caption" id="translatedCaption" hidden></div>
         <div class="subtitle-status" id="subtitleStatus">${streamType ? streamType.toUpperCase() : "Direct"} stream · Spanish subtitles preferred</div>
-        ${renderVidstreamControls()}
+        ${useNativeControls ? "" : renderVidstreamControls()}
       </div>
       ${renderPlayerEpisodeActions(url)}
     </div>
