@@ -102,6 +102,17 @@ const ImageResolver = (function () {
     return shared / new Set([...ta, ...tb]).size; // Jaccard 0..1
   }
 
+  function stripSequelWords(str) {
+    return norm(str)
+      .replace(/\b\d+(st|nd|rd|th)\b/g, "")
+      .replace(/\b(season|part|cour|capitulo|temp|temporada)\b/g, "")
+      .replace(/\b(s\d+|p\d+|c\d+)\b/g, "")
+      .replace(/\b\d+\b/g, "")
+      .replace(/\b(ii|iii|iv|v|vi|vii|viii|ix|x)\b/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   // Best title-only score (0..100) between any AniList title/synonym and a
   // TMDB candidate name/original_name.
   function titleScore(anime, candidate) {
@@ -121,9 +132,19 @@ const ImageResolver = (function () {
         const nc = norm(ct);
         if (!na || !nc) continue;
         let s;
-        if (na === nc) s = 100;
-        else if (na.includes(nc) || nc.includes(na)) s = 82;
-        else s = Math.round(tokenSimilarity(at, ct) * 78);
+        if (na === nc) {
+          s = 100;
+        } else {
+          const sa = stripSequelWords(at);
+          const sc = stripSequelWords(ct);
+          if (sa && sc && sa === sc) {
+            s = 96;
+          } else if (na.includes(nc) || nc.includes(na)) {
+            s = 82;
+          } else {
+            s = Math.round(tokenSimilarity(at, ct) * 78);
+          }
+        }
         if (s > best) best = s;
       }
     }
