@@ -6987,7 +6987,13 @@ function readUnderHentaiDetails() {
 
 function hasUnderHentaiDirectEmbed(sourceOption = {}) {
   return Array.isArray(sourceOption.embeds)
-    && sourceOption.embeds.some((embed) => /krakenfiles\.com\//i.test(String(embed)));
+    && sourceOption.embeds.some((embed) => {
+      try {
+        return UNDERHENTAI_ALLOWED_EMBED_HOSTS.has(new URL(embed).hostname.toLowerCase());
+      } catch {
+        return false;
+      }
+    });
 }
 
 function prepareUnderHentaiSnapshotItem(item = {}) {
@@ -7335,22 +7341,22 @@ async function handleUnderHentaiStream(url, response) {
     }));
 
     const directSources = sourceOptions.filter((sourceOption) => sourceOption.type === "direct" && sourceOption.videoUrl);
-    if (!directSources.length) {
+    if (!sourceOptions.length) {
       sendJson(response, {
         ok: false,
-        error: "No ad-free direct playback source is currently available for this release."
+        error: "No playback source is currently available for this release."
       }, 404);
       return;
     }
-    const bestSource = directSources[0];
+    const bestSource = directSources.length ? directSources[0] : sourceOptions[0];
     const payload = {
       ok: true,
       source: "UnderHentai",
       adultOnly: true,
-      videoUrl: bestSource.videoUrl || "",
-      externalUrl: "",
-      externalType: "",
-      sourceOptions: directSources
+      videoUrl: bestSource.type === "direct" ? (bestSource.videoUrl || "") : "",
+      externalUrl: bestSource.type === "iframe" ? (bestSource.externalUrl || "") : "",
+      externalType: bestSource.type === "iframe" ? (bestSource.externalType || "iframe") : "",
+      sourceOptions
     };
     sendJson(response, payload);
   } catch (error) {
