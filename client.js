@@ -4889,8 +4889,6 @@ async function hydrateOpenShowDetails(show, target = {}, openToken = "") {
         const background = getWatchBackdropArtwork(show, state.activeEpisode.season);
         frame?.style.setProperty("--watch-bg", background ? `url("${background}")` : "none");
         if (frame) renderSourcePickerIn(frame);
-      } else {
-        resetVideoFrame();
       }
       refreshFocusables();
       return;

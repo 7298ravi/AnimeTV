@@ -285,37 +285,6 @@ function t(key) {
   return TRANSLATIONS[state.appLanguage]?.[key] || TRANSLATIONS.en[key] || key;
 }
 
-function updateFilterButtons() {
-  const isAdult = typeof AdultMode !== "undefined" && AdultMode.isEnabled();
-  const filters = isAdult
-    ? [
-        { id: "all", label: t("all") },
-        { id: "yuri", label: "Yuri" },
-        { id: "milf", label: "Milf" },
-        { id: "netorare", label: "Netorare" },
-        { id: "harem", label: "Harem" }
-      ]
-    : [
-        { id: "all", label: t("all") },
-        { id: "action", label: t("action") },
-        { id: "comedy", label: t("comedy") },
-        { id: "fantasy", label: t("fantasy") },
-        { id: "romance", label: t("romance") }
-      ];
-
-  document.querySelectorAll(".filters").forEach((group) => {
-    const buttons = group.querySelectorAll("button");
-    buttons.forEach((btn, index) => {
-      const f = filters[index];
-      if (f && btn) {
-        btn.dataset.filter = f.id;
-        btn.textContent = f.label;
-        btn.classList.toggle("is-selected", state.filter === f.id);
-      }
-    });
-  });
-}
-
 function applyAppLanguage() {
   document.documentElement.lang = state.appLanguage;
   document.querySelector('[data-route="home"]:not(.brand)')?.lastChild && (document.querySelector('[data-route="home"]:not(.brand)').lastChild.textContent = ` ${t("navHome")}`);
@@ -342,7 +311,11 @@ function applyAppLanguage() {
   setPlaceholder(searchInputTop, "searchLong");
   setPlaceholder(searchInputLibrary, "searchAnime");
   setPlaceholder(searchInputAniPub, "searchAniPub");
-  updateFilterButtons();
+  ["all", "action", "comedy", "fantasy", "romance"].forEach((filter) => {
+    document.querySelectorAll(`[data-filter="${filter}"]`).forEach((button) => {
+      button.textContent = filter === "all" ? t("all") : t(filter);
+    });
+  });
   if (fakePlay) fakePlay.textContent = t("play");
   if (castButton) castButton.textContent = t("cast");
   setFavoriteButtonState(Boolean(state.activeShow && state.favorites.includes(state.activeShow.id)));
@@ -1275,9 +1248,7 @@ function refreshCatalogStatus() {
 function visibleShows() {
   return catalogShows().filter((show) => {
     const matchesSearch = matchesShowSearch(show);
-    const matchesFilter = state.filter === "all" ||
-      (show.genre && String(show.genre).toLowerCase() === state.filter.toLowerCase()) ||
-      (Array.isArray(show.genres) && show.genres.some(g => String(g).toLowerCase() === state.filter.toLowerCase()));
+    const matchesFilter = state.filter === "all" || show.genre === state.filter;
     return matchesSearch && matchesFilter;
   });
 }
@@ -1649,11 +1620,7 @@ function latestEpisodeReleases(limit = HOME_CARD_LIMIT) {
   const ranked = catalogShows()
     .filter((show) => {
       if (!matchesShowSearch(show)) return false;
-      if (state.filter !== "all") {
-        const matchesG = (show.genre && String(show.genre).toLowerCase() === state.filter.toLowerCase()) ||
-          (Array.isArray(show.genres) && show.genres.some(g => String(g).toLowerCase() === state.filter.toLowerCase()));
-        if (!matchesG) return false;
-      }
+      if (state.filter !== "all" && show.genre !== state.filter) return false;
       if (!(show.image || show.poster || show.cover)) return false;
       const status = (show.status || "").toUpperCase();
       if (status === "FINISHED" || status === "CANCELLED" || status.includes("FINISH")) return false;
@@ -1780,11 +1747,7 @@ function buildLatestEpisodesList(limit = HOME_CARD_LIMIT) {
     if (usedIds.has(card.id) || (titleKey && usedTitles.has(titleKey))) continue;
     if (typeof AdultMode !== "undefined" && !AdultMode.matchesActiveCatalog(card)) continue;
     if (!matchesShowSearch(card)) continue;
-    if (state.filter !== "all") {
-      const matchesG = (card.genre && String(card.genre).toLowerCase() === state.filter.toLowerCase()) ||
-        (Array.isArray(card.genres) && card.genres.some(g => String(g).toLowerCase() === state.filter.toLowerCase()));
-      if (!matchesG) continue;
-    }
+    if (state.filter !== "all" && card.genre !== state.filter) continue;
     usedIds.add(card.id);
     if (titleKey) usedTitles.add(titleKey);
     list.push(card);
@@ -1864,9 +1827,6 @@ function getWatchPosterArtwork(show = {}, season = null) {
   show = show || {};
   season = season || {};
   const candidates = [
-    show.images?.poster,
-    show.images?.cover,
-    show.images?.thumbnail,
     show.tmdbSeasonPoster,
     show.tmdbPoster,
     show.coverImageLarge,
@@ -1875,9 +1835,7 @@ function getWatchPosterArtwork(show = {}, season = null) {
     show.cover,
     show.coverImage,
     show.thumbnail,
-    season?.image,
-    show.images?.banner,
-    show.images?.backdrop,
+    season.image,
     show.banner,
     show.backdrop
   ].map((value) => hqImage(String(value || "").trim()));
@@ -1886,9 +1844,6 @@ function getWatchPosterArtwork(show = {}, season = null) {
 
 function getCardPosterCandidates(show = {}) {
   const candidates = [
-    show.images?.poster,
-    show.images?.cover,
-    show.images?.thumbnail,
     show.tmdbSeasonPoster,
     show.tmdbPoster,
     show.coverImageLarge,
@@ -1897,8 +1852,7 @@ function getCardPosterCandidates(show = {}) {
     show.poster,
     show.cover,
     show.jikanImage,
-    show.thumbnail,
-    "logo-round.png"
+    show.thumbnail
   ];
   const expanded = [];
   candidates.forEach((value) => {
@@ -1921,13 +1875,11 @@ function getWatchBackdropArtwork(show = {}, season = null) {
   show = show || {};
   season = season || {};
   const candidates = [
-    show.images?.backdrop,
-    show.images?.banner,
     show.tmdbBackdrop,
     show.highQualityBackground,
     show.banner,
     show.bannerImage,
-    season?.tmdbBackdrop,
+    season.tmdbBackdrop,
     show.tmdbSeasonPoster,
     show.backdrop,
     show.heroImage,
@@ -1935,12 +1887,9 @@ function getWatchBackdropArtwork(show = {}, season = null) {
     show.landscapeImage,
     show.jikanBackground,
     show.coverImageLarge,
-    season?.highQualityBackground,
-    season?.banner,
-    season?.backdrop,
-    show.images?.poster,
-    show.images?.cover,
-    show.image
+    season.highQualityBackground,
+    season.banner,
+    season.backdrop
   ].map((value) => hqImage(String(value || "").trim()));
   return pickImage(candidates);
 }
@@ -2074,7 +2023,7 @@ function renderCarouselIndicators(items) {
   if (!carouselIndicators) return;
   carouselIndicators.innerHTML = items.slice(0, 8).map((show, index) => `
     <button class="carousel-dot focusable ${index === state.carouselIndex ? "is-selected" : ""}" data-carousel-index="${index}" aria-label="Show ${escapeHtml(getShowTitle(show))}">
-      ${carouselArtworkOrPoster(show) ? `<img referrerpolicy="no-referrer" src="${carouselArtworkOrPoster(show)}" alt="">` : "<span></span>"}
+      ${carouselArtworkOrPoster(show) ? `<img src="${carouselArtworkOrPoster(show)}" alt="">` : "<span></span>"}
     </button>
   `).join("");
 
@@ -2103,15 +2052,7 @@ function simpleCarouselText(show) {
 document.addEventListener("error", (event) => {
   const img = event.target;
   if (!(img instanceof HTMLImageElement)) return;
-  if (!img.isConnected) return; // Ignore unmounted/aborted image loads.
-  
-  const hasCandidates = img.classList.contains("thumb-poster") || 
-                        img.classList.contains("thumb-backdrop") ||
-                        img.classList.contains("ep-thumb-img") ||
-                        img.classList.contains("season-card-img") ||
-                        img.classList.contains("watch-poster");
-                        
-  if (hasCandidates) {
+  if (img.classList.contains("thumb-poster") || img.classList.contains("thumb-backdrop")) {
     try { ImageResolver.markImageFailed(img.currentSrc || img.src); } catch { /* resolver optional */ }
     let candidates = [];
     try { candidates = JSON.parse(decodeURIComponent(img.dataset.imageFallbacks || "")); } catch { /* no fallback list */ }
@@ -2128,10 +2069,8 @@ document.addEventListener("error", (event) => {
       return;
     }
   }
-  
   if (img.dataset.imgFallback) return;
   img.dataset.imgFallback = "1";
-  
   if (img.classList.contains("watch-poster")) {
     img.style.display = "none";
     const wrap = img.closest(".watch-ready-poster-wrap");
@@ -2141,14 +2080,6 @@ document.addEventListener("error", (event) => {
       ph.innerHTML = '<div class="play-symbol" aria-hidden="true"></div>';
       wrap.appendChild(ph);
     }
-  } else if (img.classList.contains("ep-thumb-img")) {
-    img.style.display = "none";
-    if (img.parentElement) {
-      img.parentElement.classList.remove("has-image");
-      img.parentElement.classList.add("is-placeholder");
-    }
-  } else if (img.classList.contains("season-card-img")) {
-    img.style.display = "none";
   } else if (img.classList.contains("thumb-poster") || img.classList.contains("thumb-backdrop") || img.closest(".carousel-dot")) {
     img.style.visibility = "hidden";   // reveal the card's gradient placeholder
   }
@@ -2463,22 +2394,11 @@ function applyAniListExtras(show, data) {
     show.streamingEpisodes = data.episodes;
     // AniList lists episodes newest-first and embeds the number in the title, so
     // key them by parsed episode number for reliable matching against our list.
-    const byNum = { ...(show.streamingEpisodesByNum || {}) };
+    const byNum = {};
     data.episodes.forEach((e, index) => {
       const m = /episode\s*(\d+)/i.exec(e.title || "");
       const n = Number(e.episode || e.number || (m ? m[1] : index + 1));
-      if (n) {
-        const existing = byNum[n] || {};
-        byNum[n] = {
-          ...e,
-          ...existing,
-          title: existing.title && !/^(?:episode|ep)\s*\d+$/i.test(existing.title)
-            ? existing.title
-            : (e.title || existing.title || `Episode ${n}`),
-          thumbnail: existing.thumbnail || e.thumbnail || e.image || "",
-          aired: existing.aired || e.aired || ""
-        };
-      }
+      if (n && !byNum[n]) byNum[n] = e;
     });
     show.streamingEpisodesByNum = byNum;
   }
@@ -2671,8 +2591,8 @@ function cardTemplate(show, index = 0) {
     : "";
   const image = posterUrl
     ? `
-        <img referrerpolicy="no-referrer" class="thumb-backdrop" src="${escapeHtml(posterUrl)}" alt="" loading="lazy"${fallbackData}>
-        <img referrerpolicy="no-referrer" class="thumb-poster" src="${escapeHtml(posterUrl)}" alt="" loading="lazy"${fallbackData}>
+        <img class="thumb-backdrop" src="${escapeHtml(posterUrl)}" alt="" loading="lazy"${fallbackData}>
+        <img class="thumb-poster" src="${escapeHtml(posterUrl)}" alt="" loading="lazy"${fallbackData}>
       `
     : "";
   return `
@@ -2818,7 +2738,7 @@ function renderSchedule() {
           ${shows.length ? shows.map((show) => `
             <button class="schedule-item focusable" data-open-show="${escapeHtml(show.id)}" data-open-season="${getCardTarget(show).seasonNumber}" data-open-episode="${getCardTarget(show).episodeNumber}">
               <span class="schedule-thumb">
-                ${show.image ? `<img referrerpolicy="no-referrer" src="${escapeHtml(show.image)}" alt="" loading="lazy">` : ""}
+                ${show.image ? `<img src="${escapeHtml(show.image)}" alt="" loading="lazy">` : ""}
                 <span>${cardEpisodeLabel(show)}</span>
               </span>
               <span class="schedule-copy">
@@ -2842,9 +2762,7 @@ function renderAniPubCatalog() {
     : allItems;
   const filtered = filteredByMode.filter((show) => {
     const matchesSearch = matchesShowSearch(show);
-    const matchesFilter = state.filter === "all" ||
-      (show.genre && String(show.genre).toLowerCase() === state.filter.toLowerCase()) ||
-      (Array.isArray(show.genres) && show.genres.some(g => String(g).toLowerCase() === state.filter.toLowerCase()));
+    const matchesFilter = state.filter === "all" || show.genre === state.filter;
     return matchesSearch && matchesFilter;
   });
   renderCards(anipubGrid, filtered);
@@ -4010,9 +3928,7 @@ function renderAddonSections() {
       const railId = `addonRail-${cssSafeId(section.id)}`;
       const matchingItems = section.items.filter((show) => {
         const matchesSearch = matchesShowSearch(show);
-        const matchesFilter = state.filter === "all" ||
-          (show.genre && String(show.genre).toLowerCase() === state.filter.toLowerCase()) ||
-          (Array.isArray(show.genres) && show.genres.some(g => String(g).toLowerCase() === state.filter.toLowerCase()));
+        const matchesFilter = state.filter === "all" || show.genre === state.filter;
         return matchesSearch && matchesFilter;
       });
       const visibleLimit = state.search
@@ -4366,13 +4282,6 @@ function renderSettings() {
           </div>
         </div>
         <div class="settings-line">
-          <span>Controls style <small>Use ZenkaiTV overlay or the player's own clean controls</small></span>
-          <div class="settings-row settings-segment">
-            <button class="settings-choice focusable ${ui.playerInterface !== "native" ? "is-selected" : ""}" data-player-interface="custom" type="button">ZenkaiTV</button>
-            <button class="settings-choice focusable ${ui.playerInterface === "native" ? "is-selected" : ""}" data-player-interface="native" type="button">Clean / Native</button>
-          </div>
-        </div>
-        <div class="settings-line">
           <span>Video fit <small>Same contain, cover, and fill modes as the APK player</small></span>
           <div class="settings-row settings-segment">
             ${["contain", "cover", "fill"].map((fit) => `
@@ -4524,14 +4433,6 @@ function wireSettingsButtons() {
       saveUiPreferences({ playerEngine: button.dataset.playerEngine || "apk" });
       renderSettings();
       showToast("Player setting saved");
-    });
-  });
-
-  settingsGrid.querySelectorAll("[data-player-interface]").forEach((button) => {
-    button.addEventListener("click", () => {
-      saveUiPreferences({ playerInterface: button.dataset.playerInterface || "custom" });
-      renderSettings();
-      showToast("Player controls style saved");
     });
   });
 
@@ -4725,7 +4626,6 @@ function wireSourceButtons(root = document) {
 }
 
 function render() {
-  updateFilterButtons();
   const filtered = visibleShows();
   if (state.isLoadingCatalog && !filtered.length) {
     renderSkeletonCards(latestGrid, 14);
@@ -4889,8 +4789,6 @@ async function hydrateOpenShowDetails(show, target = {}, openToken = "") {
         const background = getWatchBackdropArtwork(show, state.activeEpisode.season);
         frame?.style.setProperty("--watch-bg", background ? `url("${background}")` : "none");
         if (frame) renderSourcePickerIn(frame);
-      } else {
-        resetVideoFrame();
       }
       refreshFocusables();
       return;
@@ -5402,27 +5300,12 @@ function resetVideoFrame() {
       ? `Source: ${escapeHtml(show.source)}`
       : "";
 
-  const watchPosterCandidates = [
-    poster,
-    show?.images?.poster,
-    show?.images?.cover,
-    show?.tmdbSeasonPoster,
-    show?.tmdbPoster,
-    show?.coverImageLarge,
-    show?.image,
-    "logo-round.png"
-  ].map(u => String(u || "").trim()).filter(Boolean);
-  const watchPosterUrl = watchPosterCandidates[0] || "";
-  const watchFallbackData = watchPosterCandidates.length
-    ? ` data-image-fallbacks="${escapeHtml(encodeURIComponent(JSON.stringify(watchPosterCandidates)))}" data-image-fallback-index="0"`
-    : "";
-
   frame.innerHTML = `
     <div class="watch-ready-state" id="watchArt">
       <div class="watch-ready-poster-wrap">
         ${
-          watchPosterUrl
-            ? `<img referrerpolicy="no-referrer" class="watch-poster" src="${escapeHtml(watchPosterUrl)}" alt="${escapeHtml(getShowTitle(show))}" loading="lazy"${watchFallbackData} onerror="handleWatchPosterError(this)">`
+          poster
+            ? `<img class="watch-poster" src="${escapeHtml(poster)}" alt="${escapeHtml(getShowTitle(show))}" loading="lazy" onerror="handleWatchPosterError(this)">`
             : `<div class="watch-poster-placeholder"><div class="play-symbol" aria-hidden="true"></div></div>`
         }
       </div>
@@ -5642,7 +5525,6 @@ function applyWatchBackdrop(show, season) {
     // Verify the winning art really loads; if it 404s, blacklist it and fall
     // back to the next candidate so the backdrop is never broken.
     const probe = new Image();
-    probe.referrerPolicy = "no-referrer";
     probe.onerror = () => {
       try { ImageResolver.markImageFailed(art); } catch { /* resolver optional */ }
       if (state.activeShow?.id === show.id) paint(getWatchBackdropArtwork(show, season));
@@ -5741,16 +5623,11 @@ function episodeThumb(episode = {}, season = {}, show = {}, repeatedImages = new
     show.image, show.poster, show.cover, show.thumbnail, show.banner, show.bannerImage,
     show.tmdbPoster, show.tmdbSeasonPoster, show.tmdbBackdrop, season?.image, season?.banner
   ].map(comparableImageUrl).filter(Boolean));
-  const isAdultShow = show.adultSource || (typeof AdultMode !== "undefined" && AdultMode.isAdultContent(show));
-  if (!isAdultShow && comparable && (repeatedImages.has(comparable) || showLevelArt.has(comparable))) ownImage = "";
+  if (comparable && (repeatedImages.has(comparable) || showLevelArt.has(comparable))) ownImage = "";
   if (typeof ImageResolver !== "undefined") {
     let tmdbStill = ImageResolver.getEpisodeStill(show, episode);
-    const num = Number(episode?.episode || episode?.episodeNumber || 0);
-    if (show.tmdbId && num && !tmdbStill) {
-      ImageResolver.lazyFetchEpisodeStill(show, num);
-    }
     const tmdbComparable = comparableImageUrl(tmdbStill);
-    if (!isAdultShow && tmdbComparable && (repeatedImages.has(tmdbComparable) || showLevelArt.has(tmdbComparable))) tmdbStill = "";
+    if (tmdbComparable && (repeatedImages.has(tmdbComparable) || showLevelArt.has(tmdbComparable))) tmdbStill = "";
     return ImageResolver.resolveEpisodeThumbnail(
       { ...episode, image: ownImage, thumbnail: ownImage, still: ownImage, snapshot: ownImage },
       show,
@@ -5894,22 +5771,6 @@ function renderEpisodeList(show) {
             show,
             repeatedImages
           );
-          const tmdbStill = (typeof ImageResolver !== "undefined") ? ImageResolver.getEpisodeStill(show, { episode: num }) : "";
-          const epOwnImage = episode.image || episode.thumbnail || episode.still || episode.snapshot || epMeta?.thumbnail || "";
-          const epBackdrop = show.images?.backdrop || show.images?.banner || show.tmdbBackdrop || show.banner || show.bannerImage || "";
-          const epPoster = show.images?.poster || show.images?.cover || show.tmdbSeasonPoster || show.tmdbPoster || show.coverImageLarge || show.image || show.coverImage || "";
-          const epFallbacks = [
-            thumb,
-            tmdbStill,
-            epOwnImage,
-            epBackdrop,
-            epPoster,
-            "logo-round.png"
-          ].map(u => String(u || "").trim()).filter(Boolean);
-          const epImgSrc = epFallbacks[0] || "";
-          const epFallbackData = epFallbacks.length
-            ? ` data-image-fallbacks="${escapeHtml(encodeURIComponent(JSON.stringify(epFallbacks)))}" data-image-fallback-index="0"`
-            : "";
           const date = episodeAirDateLabel({ ...episode, aired: episode.aired || epMeta?.aired });
           const fallbackHue = (stableVisualHue(show.id || show.title) + (Number(num) * 19)) % 360;
           const locked = isEpisodeUnavailable(episode);
@@ -5931,8 +5792,8 @@ function renderEpisodeList(show) {
           <button class="ep-row focusable ${locked ? "is-locked" : ""} ${selected ? "is-selected" : ""} ${watchCls}"
                   data-season-index="${state.activeSeasonIndex}" data-episode-index="${episodeIndex}"
                   data-ep-search="${escapeHtml(search)}">
-            <span class="ep-thumb ${epImgSrc ? "has-image" : "is-placeholder"}" style="--episode-hue:${fallbackHue}">
-              ${epImgSrc ? `<img referrerpolicy="no-referrer" class="ep-thumb-img" src="${escapeHtml(epImgSrc)}" alt="" loading="lazy"${epFallbackData}>` : ""}
+            <span class="ep-thumb ${thumb ? "has-image" : "is-placeholder"}" style="--episode-hue:${fallbackHue}">
+              ${thumb ? `<img class="ep-thumb-img" src="${escapeHtml(thumb)}" alt="" loading="lazy" onerror="try{ImageResolver.markImageFailed(this.src)}catch(e){};this.style.display='none';this.parentElement.classList.add('is-placeholder')">` : ""}
               <span class="ep-thumb-num">${escapeHtml(String(num))}</span>
               <span class="ep-thumb-play" aria-hidden="true">▶</span>
               ${progressBar}
@@ -5959,21 +5820,9 @@ function renderEpisodeList(show) {
           const yr = season.year ? `<span class="season-year">${season.year}</span>` : "";
           const epLabel = epc ? `${epc} episode${epc === 1 ? "" : "s"}` : "";
           const selected = nav.isCurrent != null ? nav.isCurrent : (nav.localIndex === state.activeSeasonIndex && !nav.relatedShowId);
-          const seasonPosterCandidates = [
-            season.image,
-            show.tmdbSeasonPoster,
-            show.tmdbPoster,
-            show.coverImageLarge,
-            show.image,
-            "logo-round.png"
-          ].map(u => String(u || "").trim()).filter(Boolean);
-          const seasonPosterUrl = seasonPosterCandidates[0] || "";
-          const seasonFallbackData = seasonPosterCandidates.length
-            ? ` data-image-fallbacks="${escapeHtml(encodeURIComponent(JSON.stringify(seasonPosterCandidates)))}" data-image-fallback-index="0"`
-            : "";
           return `
           <button class="season-card focusable ${selected ? "is-selected" : ""}" data-season-card="${i}">
-            ${seasonPosterUrl ? `<img referrerpolicy="no-referrer" class="season-card-img" src="${escapeHtml(seasonPosterUrl)}" alt="" loading="lazy"${seasonFallbackData}>` : ""}
+            ${season.image ? `<img src="${escapeHtml(season.image)}" alt="" loading="lazy">` : ""}
             <strong>${escapeHtml(nav.label || season.title || `Season ${i + 1}`)}</strong>
             <small>${escapeHtml(season.sourceTitle || getSeasonDisplayTitle(show, season))}</small>
             <span>${epLabel}${badge}${yr}</span>
@@ -6321,7 +6170,6 @@ function renderPlayerPopupMessage(frame, title = "Loading episode", message = "P
 function handleWatchPosterError(image) {
   if (!image) return;
   image.onerror = null;
-  if (!image.isConnected) return;
   try { ImageResolver.markImageFailed(image.src); } catch { /* resolver optional */ }
   const frame = document.querySelector("#videoFrame");
   if (image.isConnected && frame?.contains(image)) resetVideoFrame();
@@ -6337,10 +6185,7 @@ function renderVidstreamControls() {
         <button class="vid-icon-button focusable" type="button" data-player-prev ${nav.previous ? "" : "disabled"} aria-label="Previous episode" title="Previous episode">⏮</button>
         <button class="vid-icon-button focusable" type="button" data-player-toggle aria-label="Play or pause">▶</button>
         <button class="vid-icon-button focusable" type="button" data-player-next ${nav.next ? "" : "disabled"} aria-label="Next episode" title="Next episode">⏭</button>
-        <div class="vid-volume-control">
-          <button class="vid-icon-button focusable" type="button" data-player-volume aria-label="Mute or unmute">▸</button>
-          <input class="vid-volume-slider focusable" id="playerVolume" type="range" min="0" max="100" value="50" aria-label="Volume">
-        </div>
+        <button class="vid-icon-button focusable" type="button" data-player-volume aria-label="Mute or unmute">▸</button>
         <span class="vid-time" id="playerTime">0:00 / 0:00</span>
         <span class="vid-spacer"></span>
         <button class="vid-tool-button focusable" type="button" data-player-fit aria-label="Video fit mode">${fit === "cover" ? "□" : fit === "fill" ? "▣" : "▭"}</button>
@@ -6500,7 +6345,7 @@ function renderSourcePickerIn(frame) {
         <div class="source-picker">
           <div class="source-picker-hero">
             ${poster
-              ? `<img referrerpolicy="no-referrer" class="source-picker-art" src="${escapeHtml(poster)}" alt="${escapeHtml(getShowTitle(show))}" loading="lazy">`
+              ? `<img class="source-picker-art" src="${escapeHtml(poster)}" alt="${escapeHtml(getShowTitle(show))}" loading="lazy">`
               : `<div class="source-picker-art source-picker-art-placeholder"></div>`
             }
             <div class="source-picker-hero-text">
@@ -6606,15 +6451,12 @@ function playerFitScaleValue(fit = state.uiPreferences.playerFit || "contain") {
   return 0;
 }
 
-function buildApkPlayerUrl(url = "", useNativeControls = false) {
+function buildApkPlayerUrl(url = "") {
   const playerUrl = new URL("./player/player.html", location.href);
   playerUrl.searchParams.set("v", "2");
   playerUrl.searchParams.set("src", resolveSourceEndpoint(url));
   playerUrl.searchParams.set("audio", getLanguagePreferences().audio || "");
   playerUrl.searchParams.set("quality", String(Number(state.uiPreferences.playerQuality || 0)));
-  if (useNativeControls || state.uiPreferences.playerInterface === "native") {
-    playerUrl.searchParams.set("controls", "1");
-  }
   const hash = streamTypeFromUrl(url) === "dash"
     ? "#dash"
     : streamTypeFromUrl(url) === "file"
@@ -6672,7 +6514,6 @@ function createApkPlayerController(iframe, options = {}) {
     set(value) {
       this._volume = Math.max(0, Math.min(1, Number(value) || 0));
       postApkPlayerCommand(iframe, "volume", this._volume);
-      emit("volumechange");
     }
   });
   Object.defineProperty(controller, "muted", {
@@ -6680,7 +6521,6 @@ function createApkPlayerController(iframe, options = {}) {
     set(value) {
       this._muted = Boolean(value);
       postApkPlayerCommand(iframe, "muted", this._muted);
-      emit("volumechange");
     }
   });
 
@@ -6699,14 +6539,6 @@ function createApkPlayerController(iframe, options = {}) {
     if (!data?.vcmd) return;
     const command = data.vcmd;
     const value = data.val;
-    if (command === "activity") {
-      iframe.dispatchEvent(new PointerEvent("pointermove", { bubbles: true }));
-      return;
-    }
-    if (command === "toggleFullscreen") {
-      toggleNativeFullscreen();
-      return;
-    }
     if (value && typeof value === "object") {
       controller._currentTime = Number(value.position || 0);
       controller.duration = Number(value.duration || 0);
@@ -6898,7 +6730,6 @@ function wireVidstreamControls(frame, video, episode, url, tracks = []) {
   const time = frame.querySelector("#playerTime");
   const toggle = frame.querySelector("[data-player-toggle]");
   const volume = frame.querySelector("[data-player-volume]");
-  const volumeSlider = frame.querySelector("#playerVolume");
   const loader = frame.querySelector(".vid-loader");
 
   const updateTime = () => {
@@ -6915,11 +6746,7 @@ function wireVidstreamControls(frame, video, episode, url, tracks = []) {
   };
 
   const updateVolume = () => {
-    const isMuted = video.muted || video.volume === 0;
-    if (volume) volume.textContent = isMuted ? "○" : "▸";
-    if (volumeSlider) {
-      volumeSlider.value = isMuted ? 0 : Math.round(video.volume * 100);
-    }
+    if (volume) volume.textContent = video.muted || video.volume === 0 ? "○" : "▸";
   };
 
   toggle?.addEventListener("click", () => {
@@ -6928,12 +6755,6 @@ function wireVidstreamControls(frame, video, episode, url, tracks = []) {
   });
   volume?.addEventListener("click", () => {
     video.muted = !video.muted;
-    updateVolume();
-  });
-  volumeSlider?.addEventListener("input", () => {
-    const val = Number(volumeSlider.value) / 100;
-    video.volume = val;
-    video.muted = val === 0;
     updateVolume();
   });
   seek?.addEventListener("input", () => {
@@ -6961,19 +6782,10 @@ function wireVidstreamControls(frame, video, episode, url, tracks = []) {
   frame.querySelectorAll("[data-player-panel]").forEach((button) => {
     button.addEventListener("click", () => openPlayerPanel(frame, button.dataset.playerPanel, video, episode, url, tracks));
   });
-  
-  // Double click stage to toggle fullscreen
-  const stage = frame.querySelector(".vid-player-stage");
-  stage?.addEventListener("dblclick", (e) => {
-    if (e.target.closest(".vid-controls") || e.target.closest(".vid-topbar") || e.target.closest(".vid-panel")) return;
-    toggleNativeFullscreen();
-  });
-
   video.addEventListener("loadedmetadata", updateTime);
   video.addEventListener("timeupdate", updateTime);
   video.addEventListener("play", updateToggle);
   video.addEventListener("pause", updateToggle);
-  video.addEventListener("volumechange", updateVolume);
   video.addEventListener("waiting", () => loader && (loader.hidden = false));
   video.addEventListener("canplay", () => loader && (loader.hidden = true));
   video.addEventListener("playing", () => loader && (loader.hidden = true));
@@ -7301,14 +7113,12 @@ function renderContinueWatching() {
     <button class="show-card continue-card focusable" type="button"
             data-continue-key="${escapeHtml(e.episodeKey)}" data-show-id="${escapeHtml(String(e.showId || e.animeId))}">
       <span class="continue-thumb">
-        ${img ? `<img referrerpolicy="no-referrer" src="${escapeHtml(img)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : ""}
+        ${img ? `<img src="${escapeHtml(img)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : ""}
         <span class="continue-play" aria-hidden="true">▶</span>
+        <span class="continue-bar"><span style="width:${e.progress}%"></span></span>
       </span>
-      <span>
-        <strong class="continue-card-title">${escapeHtml(e.title)}</strong>
-        <small class="continue-card-sub">${escapeHtml(sub)}</small>
-        <span class="continue-bar-outside"><span style="width:${e.progress}%"></span></span>
-      </span>
+      <strong class="continue-card-title">${escapeHtml(e.title)}</strong>
+      <small class="continue-card-sub">${escapeHtml(sub)}</small>
     </button>`;
   }).join("");
   grid.querySelectorAll("[data-continue-key]").forEach((card) => {
@@ -7573,6 +7383,7 @@ async function resolveTioAnimeSlugFromCatalog(show) {
 let visibleMetadataWarmGeneration = 0;
 
 function warmVisibleShowMetadata(shows = state.shows, limit = 64) {
+  if (typeof AdultMode !== "undefined" && AdultMode.isEnabled()) return;
   const generation = ++visibleMetadataWarmGeneration;
   const prioritized = [
     ...buildLatestEpisodesList(Math.min(HOME_CARD_LIMIT, limit)),
@@ -7580,7 +7391,7 @@ function warmVisibleShowMetadata(shows = state.shows, limit = 64) {
   ];
   const queue = [...new Map(
     prioritized
-      .filter((show) => show)
+      .filter((show) => show && (typeof AdultMode === "undefined" || !AdultMode.isAdultContent(show)))
       .map((show) => [String(show.id || getShowKey(show)), show])
   ).values()].slice(0, limit);
   let cursor = 0;
@@ -7589,33 +7400,18 @@ function warmVisibleShowMetadata(shows = state.shows, limit = 64) {
   const worker = async () => {
     while (cursor < queue.length && generation === visibleMetadataWarmGeneration) {
       const show = queue[cursor++];
-      if (!show || show._metadataPreloadComplete || show.adultDetailsLoaded) continue;
+      if (!show || show._metadataPreloadComplete) continue;
       show._metadataPreloadStarted = true;
       try {
-        if (typeof AdultMode !== "undefined" && AdultMode.isAdultContent(show)) {
-          await hydrateAdultShowDetails(show);
-          show.adultDetailsLoaded = true;
-          show._metadataPreloadComplete = true;
-        } else {
-          await hydrateCanonicalAnimeMetadata(show);
-          await Promise.allSettled([
-            fetchAniListShowExtras(show),
-            enrichTmdbImages(show)
-          ]);
-          applyTmdbEpisodeMetadata(show);
-
-          const isNativeSource = isAniPubShow(show) || isJimovShow(show);
-          await Promise.allSettled([
-            isAniPubShow(show)  ? hydrateAniPubEpisodes(show)  : Promise.resolve(show),
-            isJimovShow(show)   ? hydrateJimovEpisodes(show)   : Promise.resolve(show),
-            (!isNativeSource ? Promise.resolve(enrichShowFromAllSources(show)) : Promise.resolve(show)),
-            hydrateShowAniListFranchise(show),
-            hydrateTioAnimeSlug(show)
-          ]);
-          show._metadataPreloadComplete = true;
-        }
+        await hydrateCanonicalAnimeMetadata(show);
+        await Promise.allSettled([
+          fetchAniListShowExtras(show),
+          enrichTmdbImages(show)
+        ]);
+        applyTmdbEpisodeMetadata(show);
+        show._metadataPreloadComplete = true;
         changed = true;
-      } catch (err) {
+      } catch {
         show._metadataPreloadStarted = false;
       }
     }
@@ -8456,28 +8252,22 @@ function renderDirectVideoPlayer(frame, url, episode) {
     saveUiPreferences({ playerFit: "cover" });
   }
   const fit = state.uiPreferences.playerFit || "cover";
-  const useNativeControls = state.uiPreferences.playerInterface === "native";
-
   frame.innerHTML = `
-    <div class="video-player-shell vidstream-player fit-${escapeHtml(fit)} ${useNativeControls ? "is-iframe" : ""}" data-stream-type="${escapeHtml(streamType || "direct")}">
+    <div class="video-player-shell vidstream-player fit-${escapeHtml(fit)}" data-stream-type="${escapeHtml(streamType || "direct")}">
       <div class="vid-player-stage">
         ${useApkPlayer
-          ? `<iframe id="animePlayerFrame" class="apk-video-frame" src="${escapeHtml(buildApkPlayerUrl(url, useNativeControls))}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer" title="ZenkaiTV video player"></iframe>`
-          : `<video id="animePlayer" ${useNativeControls ? "controls" : ""} autoplay playsinline x-webkit-airplay="allow" crossorigin="anonymous">
+          ? `<iframe id="animePlayerFrame" class="apk-video-frame" src="${escapeHtml(buildApkPlayerUrl(url))}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer" title="ZenkaiTV video player"></iframe>`
+          : `<video id="animePlayer" autoplay playsinline x-webkit-airplay="allow" crossorigin="anonymous">
               ${spanishTrack ? `<track kind="subtitles" srclang="es" label="Español" src="${escapeHtml(spanishTrack.url)}" default>` : ""}
             </video>`}
         <div class="vid-loader" aria-live="polite">
-          <div class="vid-loader-animation">
-            <div class="vid-loader-ring"></div>
-            <div class="vid-loader-ring-glow"></div>
-            <div class="vid-loader-inner"></div>
-          </div>
-          <span class="vid-loader-text">Loading stream...</span>
+          <div class="play-symbol" aria-hidden="true"></div>
+          <span>Loading stream...</span>
         </div>
         ${renderVidstreamTopbar(currentEpisodeLabel())}
         <div class="translated-caption" id="translatedCaption" hidden></div>
         <div class="subtitle-status" id="subtitleStatus">${streamType ? streamType.toUpperCase() : "Direct"} stream · Spanish subtitles preferred</div>
-        ${useNativeControls ? "" : renderVidstreamControls()}
+        ${renderVidstreamControls()}
       </div>
       ${renderPlayerEpisodeActions(url)}
     </div>
@@ -8989,7 +8779,7 @@ function renderCastMessage(title, message) {
   const poster = state.activeShow?.image || state.activeShow?.banner || "";
   frame.innerHTML = `
     <div class="episode-video-empty cast-message">
-      ${poster ? `<img referrerpolicy="no-referrer" class="cast-mini-poster" src="${poster}" alt="">` : `<div class="play-symbol" aria-hidden="true"></div>`}
+      ${poster ? `<img class="cast-mini-poster" src="${poster}" alt="">` : `<div class="play-symbol" aria-hidden="true"></div>`}
       <strong>${title}</strong>
       <p>${message}</p>
       <button class="external-play-button focusable" type="button" data-cast-play>Play Here</button>
@@ -9042,7 +8832,6 @@ function wireOpenButtons() {
         const knownBackdrop = getWatchBackdropArtwork(show);
         if (!knownBackdrop) return;
         const image = new Image();
-        image.referrerPolicy = "no-referrer";
         image.decoding = "async";
         image.src = knownBackdrop;
       };
@@ -9481,7 +9270,6 @@ if (typeof AdultMode !== "undefined") {
   AdultMode.load();
   syncAdultModeChrome();
   AdultMode.onChange(async (on) => {
-    state.filter = "all";
     playThemeFlash(on);
     syncAdultModeChrome();
     if (on) await loadAdultCatalog();
@@ -9515,82 +9303,3 @@ if (window.UpdateManager) {
 window.setTimeout(hideAppLoader, 850);
 // Best-effort background refresh of stale full-site crawls (if a crawler is wired).
 window.setTimeout(() => { try { checkSourceRefreshes(); } catch { /* ignore */ } }, 9000);
-
-window.runZenkaiDebugReport = window.runDevelopmentDebugReport = function() {
-  console.log("=== ZenkaiTV / AnimeTV Diagnostics Report ===");
-  if (!state.shows || state.shows.length === 0) {
-    console.warn("No shows loaded in state.shows.");
-    return;
-  }
-  
-  const report = [];
-  state.shows.forEach((show) => {
-    const title = show.title || show.name || "Unknown Title";
-    const id = show.id || show.slug || "Unknown ID";
-    
-    const hasPoster = !!(show.images?.poster || show.image || show.coverImage || show.coverImageLarge || show.poster);
-    const hasBanner = !!(show.images?.banner || show.banner || show.bannerImage || show.backdrop || show.images?.backdrop);
-    
-    const posterUrl = show.images?.poster || show.image || "";
-    const isPosterBroken = posterUrl && typeof ImageResolver !== "undefined" && ImageResolver.isImageFailed(posterUrl);
-    const bannerUrl = show.images?.banner || show.banner || "";
-    const isBannerBroken = bannerUrl && typeof ImageResolver !== "undefined" && ImageResolver.isImageFailed(bannerUrl);
-    
-    const seasonsList = show.seasons || (show.episodes ? (typeof groupEpisodesBySeason !== "undefined" ? groupEpisodesBySeason(show.episodes) : []) : []);
-    const seasonNumbers = seasonsList.map(s => s.seasonNumber ?? s.season ?? null).filter(n => n !== null);
-    const duplicateSeasons = seasonNumbers.filter((item, index) => seasonNumbers.indexOf(item) !== index);
-    
-    let hasDuplicateEpisodes = false;
-    let missingEpisodeThumbnailsCount = 0;
-    const episodes = show.episodes || [];
-    const totalEpisodes = episodes.length;
-    
-    const epNumbers = episodes.map(e => e.episode ?? e.number ?? null).filter(n => n !== null);
-    const dupEps = epNumbers.filter((item, index) => epNumbers.indexOf(item) !== index);
-    if (dupEps.length > 0) {
-      hasDuplicateEpisodes = true;
-    }
-    
-    episodes.forEach(ep => {
-      const epThumb = ep.image || ep.thumbnail || ep.still || ep.snapshot || "";
-      if (!epThumb) {
-        missingEpisodeThumbnailsCount++;
-      }
-    });
-
-    const isSuspiciousMerge = (seasonsList.length > 15) || (dupEps.length > totalEpisodes * 0.2);
-
-    report.push({
-      ID: id,
-      Title: title,
-      "Total Seasons": seasonsList.length,
-      "Total Episodes": totalEpisodes,
-      "Has Poster": hasPoster ? (isPosterBroken ? "Broken" : "Yes") : "No",
-      "Has Banner": hasBanner ? (isBannerBroken ? "Broken" : "Yes") : "No",
-      "Dup Seasons": duplicateSeasons.length > 0 ? duplicateSeasons.join(", ") : "None",
-      "Dup Episodes": hasDuplicateEpisodes ? `${[...new Set(dupEps)].slice(0, 5).join(", ")}${dupEps.length > 5 ? "..." : ""}` : "None",
-      "Missing Ep Thumbs": missingEpisodeThumbnailsCount,
-      "Suspicious Merge": isSuspiciousMerge ? "Yes" : "No"
-    });
-  });
-  
-  console.table(report);
-  
-  const totalShows = state.shows.length;
-  const missingPosterCount = report.filter(r => r["Has Poster"] === "No").length;
-  const brokenPosterCount = report.filter(r => r["Has Poster"] === "Broken").length;
-  const missingBannerCount = report.filter(r => r["Has Banner"] === "No").length;
-  const brokenBannerCount = report.filter(r => r["Has Banner"] === "Broken").length;
-  const showsWithDupSeasons = report.filter(r => r["Dup Seasons"] !== "None").length;
-  const showsWithDupEpisodes = report.filter(r => r["Dup Episodes"] !== "None").length;
-  
-  console.log(`Summary:
-- Total Shows: ${totalShows}
-- Missing Posters: ${missingPosterCount}
-- Broken Posters: ${brokenPosterCount}
-- Missing Banners: ${missingBannerCount}
-- Broken Banners: ${brokenBannerCount}
-- Shows with Duplicate Seasons: ${showsWithDupSeasons}
-- Shows with Duplicate Episodes: ${showsWithDupEpisodes}
-`);
-};
