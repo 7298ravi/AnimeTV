@@ -8,3 +8,7 @@ logs
 *.apk
 *.aab
 screen.png
+middleware.ts
+app
+components
+lib
