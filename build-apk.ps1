@@ -13,6 +13,9 @@ Copy-Item -Force `
   (Join-Path $root "sources.json") `
   -Destination $assetsDir
 
+Copy-Item -Force -Recurse (Join-Path $root "js") $assetsDir
+Copy-Item -Force -Recurse (Join-Path $root "player") $assetsDir
+
 Push-Location $androidDir
 try {
   if (Test-Path ".\gradlew.bat") {

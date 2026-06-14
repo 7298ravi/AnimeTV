@@ -7567,6 +7567,11 @@ function getResumePosition(episode) {
 function isEntryAdult(entry) {
   if (!entry) return false;
   if (entry.isAdult === true || entry.adult === true) return true;
+  if (String(entry.animeId || "").startsWith("adult-") || 
+      String(entry.showId || "").startsWith("adult-") || 
+      String(entry.episodeKey || "").startsWith("adult-")) {
+    return true;
+  }
   const show = state.shows.find((s) => String(s.id) === String(entry.showId || entry.animeId));
   if (show && (show.isAdult || show.adult || show.adultSource || (typeof AdultMode !== "undefined" && AdultMode.isAdultContent(show)))) {
     return true;
@@ -9089,6 +9094,11 @@ async function setupSpanishSubtitles(episode, tracks = [], media = null) {
     return;
   }
 
+  if (video._spanishSubListener) {
+    video.removeEventListener("timeupdate", video._spanishSubListener);
+    video._spanishSubListener = null;
+  }
+
   const sourceTrack = tracks.find((track) => normalizeLanguagePreference(track.language || track.label) === "english") || tracks[0];
   status.textContent = `Translating ${languageName(sourceTrack.language) || "available"} subtitles to Spanish...`;
   try {
@@ -9100,7 +9110,9 @@ async function setupSpanishSubtitles(episode, tracks = [], media = null) {
     }
     status.textContent = "Spanish live translation enabled";
     const translatedCueCache = new Map();
-    video.addEventListener("timeupdate", async () => {
+    const inFlightTranslations = new Set();
+    
+    const listener = async () => {
       const cue = cues.find((item) => video.currentTime >= item.start && video.currentTime <= item.end);
       if (!cue) {
         caption.hidden = true;
@@ -9112,13 +9124,27 @@ async function setupSpanishSubtitles(episode, tracks = [], media = null) {
         caption.textContent = translatedCueCache.get(cue.key);
         return;
       }
-      caption.textContent = cue.text;
-      const translated = await translateSubtitleLine(cue.text, sourceTrack.language || "en");
-      translatedCueCache.set(cue.key, translated || cue.text);
-      if (video.currentTime >= cue.start && video.currentTime <= cue.end) {
-        caption.textContent = translated || cue.text;
+      if (inFlightTranslations.has(cue.key)) {
+        caption.textContent = cue.text;
+        return;
       }
-    });
+      inFlightTranslations.add(cue.key);
+      caption.textContent = cue.text;
+      try {
+        const translated = await translateSubtitleLine(cue.text, sourceTrack.language || "en");
+        translatedCueCache.set(cue.key, translated || cue.text);
+        if (video.currentTime >= cue.start && video.currentTime <= cue.end) {
+          caption.textContent = translated || cue.text;
+        }
+      } catch (err) {
+        console.warn("Translation failed:", err);
+      } finally {
+        inFlightTranslations.delete(cue.key);
+      }
+    };
+    
+    video._spanishSubListener = listener;
+    video.addEventListener("timeupdate", listener);
   } catch (error) {
     status.textContent = "Subtitle translation unavailable";
   }
@@ -10426,6 +10452,11 @@ async function syncWatchProgressFromDatabase() {
         const progress = dur > 0 ? Math.min(100, Math.round((pos / dur) * 100)) : 0;
         
         if (!map[key] || (row.updated_at && new Date(row.updated_at).getTime() > (map[key].updatedAt || 0))) {
+          const isAdult = Boolean(
+            row.anime_id?.startsWith("adult-") ||
+            row.episode_id?.startsWith("adult-") ||
+            (row.anime_title && typeof AdultMode !== "undefined" && AdultMode.isAdultContent({ title: row.anime_title }))
+          );
           map[key] = {
             episodeKey: key,
             animeId: row.anime_id,
@@ -10443,7 +10474,7 @@ async function syncWatchProgressFromDatabase() {
             watched: progress >= 90,
             lastWatchedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
             updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
-            isAdult: false
+            isAdult
           };
         }
       });

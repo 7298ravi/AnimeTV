@@ -8703,3 +8703,11 @@ body.sidebar-collapsed .user-profile-menu-container {
   from { transform: scale(0.95); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
+
+/* Custom layouts to force Continue Watching rail as a single horizontal scrolling row */
+.rail-shell #continueGrid,
+.rail-shell #continueGridAdult {
+  grid-template-rows: auto;
+  grid-auto-columns: clamp(13rem, 22vw, 16rem);
+}
+

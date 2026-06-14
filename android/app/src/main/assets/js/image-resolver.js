@@ -20,7 +20,7 @@ const ImageResolver = (function () {
   "use strict";
 
   const TMDB_IMG_BASE = "https://image.tmdb.org/t/p";
-  const MATCH_CACHE_PREFIX = "zenkaitv:tmdb-match:v3:";
+  const MATCH_CACHE_PREFIX = "zenkaitv:tmdb-match:v5:";
   const MATCH_CACHE_TTL_MS = 1000 * 60 * 60 * 24; // Refresh airing episode stills daily.
   const FAILED_CACHE_KEY = "zenkaitv:img-failed:v1";
   const FAILED_CACHE_MAX = 400;
@@ -50,8 +50,7 @@ const ImageResolver = (function () {
     if (_failedMemory) return _failedMemory;
     _failedMemory = new Set();
     try {
-      const raw = JSON.parse(localStorage.getItem(FAILED_CACHE_KEY) || "[]");
-      if (Array.isArray(raw)) raw.forEach((u) => _failedMemory.add(u));
+      localStorage.removeItem(FAILED_CACHE_KEY);
     } catch { /* ignore */ }
     return _failedMemory;
   }
@@ -61,10 +60,6 @@ const ImageResolver = (function () {
     const set = failedSet();
     if (set.has(u)) return;
     set.add(u);
-    try {
-      const arr = [...set].slice(-FAILED_CACHE_MAX);
-      localStorage.setItem(FAILED_CACHE_KEY, JSON.stringify(arr));
-    } catch { /* quota — memory copy still works this session */ }
     debug("marked broken image, will skip from now on:", u);
   }
   function isImageFailed(url) {
@@ -86,11 +81,15 @@ const ImageResolver = (function () {
 
   // ── Title matching + confidence scoring ─────────────────────────────────────
   function norm(value) {
-    // Local copy of the catalog's normalizeTitle so the resolver is standalone.
-    if (typeof normalizeTitle === "function") return normalizeTitle(value);
     return String(value || "")
-      .toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
-      .replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      // Preserve a-z, 0-9, Chinese ideographs, Hiragana, Katakana, and full-width alphanumeric
+      .replace(/[^a-z0-9\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uff10-\uff19\uff41-\uff5a\uff21-\uff3a]+/gi, " ")
+      .replace(/\b(season|part|tv|ova|ona|the|a|an)\b/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   function tokenSimilarity(a, b) {
@@ -104,6 +103,8 @@ const ImageResolver = (function () {
 
   function stripSequelWords(str) {
     return norm(str)
+      .replace(/[第]?\s*\d+\s*[季期话話集]/g, "")
+      .replace(/[第]\s*[一二三四五六七八九十\d]+\s*[季期话話集]/g, "")
       .replace(/\b\d+(st|nd|rd|th)\b/g, "")
       .replace(/\b(season|part|cour|capitulo|temp|temporada)\b/g, "")
       .replace(/\b(s\d+|p\d+|c\d+)\b/g, "")
@@ -125,6 +126,8 @@ const ImageResolver = (function () {
     const candTitles = [candidate.name, candidate.original_name]
       .map((t) => String(t || "").trim()).filter(Boolean);
 
+    const cleanSpaces = (s) => String(s || "").replace(/\s+/g, "");
+
     let best = 0;
     for (const at of animeTitles) {
       for (const ct of candTitles) {
@@ -134,10 +137,12 @@ const ImageResolver = (function () {
         let s;
         if (na === nc) {
           s = 100;
+        } else if (cleanSpaces(na) === cleanSpaces(nc)) {
+          s = 98;
         } else {
           const sa = stripSequelWords(at);
           const sc = stripSequelWords(ct);
-          if (sa && sc && sa === sc) {
+          if (sa && sc && (sa === sc || cleanSpaces(sa) === cleanSpaces(sc))) {
             s = 96;
           } else if (na.includes(nc) || nc.includes(na)) {
             s = 82;
@@ -174,7 +179,20 @@ const ImageResolver = (function () {
     } else {
       reason += " year(n/a)";
     }
-    const confidence = Math.max(0, Math.min(100, tScore + yearAdj));
+
+    let genreAdj = 0;
+    const genres = candidate.genre_ids || [];
+    if (Array.isArray(genres) && genres.length > 0) {
+      if (genres.includes(16)) {
+        genreAdj = 15;
+        reason += " genre(animation)=+15";
+      } else {
+        genreAdj = -35;
+        reason += " genre(non-animation)=-35";
+      }
+    }
+
+    const confidence = Math.max(0, Math.min(100, tScore + yearAdj + genreAdj));
     return { confidence, reason, tScore };
   }
 
@@ -187,17 +205,17 @@ const ImageResolver = (function () {
     const animeSeasonNum = Number(anime.seasonNumber || 0) || null;
     const animeYear = Number(anime.seasonYear || anime.year || 0) || null;
 
-    // 1) Match by air-date year (most reliable for split-cour anime).
+    // 1) Match by season number when it lines up with a TMDB season.
+    if (animeSeasonNum) {
+      const bySeason = real.find((s) => Number(s.season_number) === animeSeasonNum);
+      if (bySeason) return { season: bySeason, reason: "season number match" };
+    }
+    // 2) Match by air-date year (most reliable for split-cour anime).
     if (animeYear) {
       const byYear = real
         .map((s) => ({ s, diff: Math.abs((yearOf(s.air_date) || 9999) - animeYear) }))
         .sort((a, b) => a.diff - b.diff)[0];
       if (byYear && byYear.diff <= 1) return { season: byYear.s, reason: `year match (Δ${byYear.diff})` };
-    }
-    // 2) Match by season number when it lines up with a TMDB season.
-    if (animeSeasonNum) {
-      const bySeason = real.find((s) => Number(s.season_number) === animeSeasonNum);
-      if (bySeason) return { season: bySeason, reason: "season number match" };
     }
     // 3) Uncertain — don't guess wrong; caller will keep AniList fallback for
     //    season-specific art but can still use show-level poster/backdrop.
@@ -233,11 +251,20 @@ const ImageResolver = (function () {
     anime.tmdbSeasonPoster = data.seasonPoster || anime.tmdbSeasonPoster || null;
     anime.tmdbEpisodeStills = data.episodeStills || anime.tmdbEpisodeStills || {};
     anime.tmdbEpisodesByNum = data.episodesByNum || anime.tmdbEpisodesByNum || {};
+    anime.tmdbSeasons = data.seasons || anime.tmdbSeasons || [];
     // Convenience bundle matching the documented imageSources shape.
     anime.imageSources = {
       poster: firstValidImage([anime.tmdbSeasonPoster, anime.tmdbPoster, anime.coverImageLarge, anime.image, anime.coverImage]) || null,
       backdrop: firstValidImage([anime.tmdbBackdrop, anime.bannerImage, anime.banner, anime.tmdbSeasonPoster, anime.coverImageLarge]) || null,
       banner: anime.bannerImage || anime.banner || null
+    };
+    anime.images = {
+      poster: firstValidImage([anime.tmdbSeasonPoster, anime.tmdbPoster, anime.coverImageLarge, anime.image, anime.coverImage]) || null,
+      cover: anime.coverImageLarge || anime.image || anime.coverImage || null,
+      banner: anime.bannerImage || anime.banner || null,
+      backdrop: firstValidImage([anime.tmdbBackdrop, anime.bannerImage, anime.banner, anime.tmdbSeasonPoster, anime.coverImageLarge]) || null,
+      thumbnail: firstValidImage([anime.tmdbSeasonPoster, anime.coverImageLarge, anime.image]) || null,
+      episodeStill: null
     };
   }
 
@@ -263,12 +290,27 @@ const ImageResolver = (function () {
       }
 
       // Search with the strongest titles first.
-      const searchTitles = [
+      const rawTitles = [
         anime.englishTitle || anime.title?.english,
         anime.romajiTitle || anime.title?.romaji,
         anime.nativeTitle || anime.title?.native,
         ...(Array.isArray(anime.synonyms) ? anime.synonyms.slice(0, 2) : [])
       ].map((t) => String(t || "").trim()).filter(Boolean);
+
+      const searchTitles = [];
+      const seenSearchTitles = new Set();
+      for (const t of rawTitles) {
+        const normRaw = norm(t);
+        if (normRaw && !seenSearchTitles.has(normRaw)) {
+          seenSearchTitles.add(normRaw);
+          searchTitles.push(t);
+        }
+        const stripped = stripSequelWords(t);
+        if (stripped && stripped.length > 2 && !seenSearchTitles.has(stripped)) {
+          seenSearchTitles.add(stripped);
+          searchTitles.push(stripped);
+        }
+      }
       const seenTitles = new Set();
       const year = String(anime.seasonYear || anime.year || "");
       debug(`search titles for ${anilistId}:`, searchTitles, "year:", year || "—");
@@ -347,12 +389,36 @@ const ImageResolver = (function () {
               { cache: "no-store" }, 12000
             );
             const payload = resp.ok ? await resp.json() : null;
-            for (const ep of (payload?.season?.episodes || [])) {
+            const tmdbEpisodes = payload?.season?.episodes || [];
+            
+            // Check if we need to offset episodes (e.g. all seasons grouped under Season 1 on TMDB)
+            let episodeOffset = 0;
+            const animeYear = Number(anime.seasonYear || anime.year || 0);
+            
+            if (Number(season.season_number) === 1 && tmdbEpisodes.length > 24 && animeYear) {
+              let matchingEp = tmdbEpisodes.find(ep => yearOf(ep.air_date) === animeYear);
+              if (!matchingEp && animeYear) {
+                matchingEp = tmdbEpisodes.find(ep => {
+                  const epYear = yearOf(ep.air_date);
+                  return epYear && Math.abs(epYear - animeYear) <= 1;
+                });
+              }
+              if (matchingEp) {
+                episodeOffset = matchingEp.episode_number - 1;
+                debug(`Grouped season detected. Mapped AniList Season to TMDB S1 starting at episode ${matchingEp.episode_number} (offset: ${episodeOffset})`);
+              }
+            }
+
+            for (const ep of tmdbEpisodes) {
               const still = tmdbStillUrl(ep.still_path);
-              if (ep.episode_number && still) episodeStills[ep.episode_number] = still;
-              if (ep.episode_number) {
-                episodesByNum[ep.episode_number] = {
-                  episode: ep.episode_number,
+              let targetEpisodeNum = ep.episode_number;
+              if (episodeOffset > 0) {
+                targetEpisodeNum = ep.episode_number - episodeOffset;
+              }
+              if (targetEpisodeNum > 0) {
+                if (still) episodeStills[targetEpisodeNum] = still;
+                episodesByNum[targetEpisodeNum] = {
+                  episode: targetEpisodeNum,
                   title: ep.name || "",
                   description: ep.overview || "",
                   aired: ep.air_date || "",
@@ -374,7 +440,8 @@ const ImageResolver = (function () {
         showBackdrop,
         seasonPoster,
         episodeStills,
-        episodesByNum
+        episodesByNum,
+        seasons: show?.seasons || []
       };
       applyResolvedMatch(anime, resolved);
       anime._tmdbResolved = true;
@@ -427,6 +494,74 @@ const ImageResolver = (function () {
     ]) || "";
   }
 
+  function findTmdbSeasonForEpisode(anime, episodeNumber) {
+    const seasons = anime.tmdbSeasons || [];
+    if (!seasons.length) return null;
+    const numberedSeasons = seasons
+      .filter((s) => Number(s.season_number) > 0)
+      .sort((a, b) => a.season_number - b.season_number);
+    let accumulated = 0;
+    for (const s of numberedSeasons) {
+      const count = Number(s.episode_count || 0);
+      if (episodeNumber > accumulated && episodeNumber <= accumulated + count) {
+        return {
+          seasonNumber: s.season_number,
+          episodeOffset: accumulated
+        };
+      }
+      accumulated += count;
+    }
+    return null;
+  }
+
+  const _lazyFetching = new Set();
+  async function lazyFetchEpisodeStill(anime, episodeNumber) {
+    if (!anime || !anime.tmdbId || !episodeNumber) return;
+    const mapping = findTmdbSeasonForEpisode(anime, episodeNumber);
+    if (!mapping) return;
+    if (anime._tmdbSeasonsLoaded && anime._tmdbSeasonsLoaded.has(mapping.seasonNumber)) return;
+    const key = `${anime.anilistId || anime.id}:${mapping.seasonNumber}`;
+    if (_lazyFetching.has(key)) return;
+    _lazyFetching.add(key);
+    try {
+      debug(`Lazy fetching TMDB season S${mapping.seasonNumber} for show ${anime.anilistId || anime.id} (contains absolute episode ${episodeNumber})...`);
+      const url = `./api/tmdb/season?id=${encodeURIComponent(anime.tmdbId)}&season=${encodeURIComponent(mapping.seasonNumber)}`;
+      const resp = typeof fetchWithTimeout === "function"
+        ? await fetchWithTimeout(url, { cache: "no-store" }, 12000)
+        : await fetch(url);
+      const payload = resp.ok ? await resp.json() : null;
+      const eps = payload?.season?.episodes || [];
+      let changed = false;
+      for (const ep of eps) {
+        const still = tmdbStillUrl(ep.still_path);
+        const absoluteEpNum = mapping.episodeOffset + ep.episode_number;
+        if (still) {
+          if (!anime.tmdbEpisodeStills) anime.tmdbEpisodeStills = {};
+          anime.tmdbEpisodeStills[absoluteEpNum] = still;
+          changed = true;
+        }
+        if (!anime.tmdbEpisodesByNum) anime.tmdbEpisodesByNum = {};
+        anime.tmdbEpisodesByNum[absoluteEpNum] = {
+          episode: absoluteEpNum,
+          title: ep.name || "",
+          description: ep.overview || "",
+          aired: ep.air_date || "",
+          thumbnail: still
+        };
+      }
+      if (changed) {
+        debug(`Lazy fetched S${mapping.seasonNumber} for show ${anime.anilistId || anime.id}. Triggering repaint.`);
+        if (typeof render === "function") render();
+      }
+    } catch (err) {
+      debug(`Lazy fetch failed: ${err.message}`);
+    } finally {
+      if (!anime._tmdbSeasonsLoaded) anime._tmdbSeasonsLoaded = new Set();
+      anime._tmdbSeasonsLoaded.add(mapping.seasonNumber);
+      _lazyFetching.delete(key);
+    }
+  }
+
   return {
     firstValidImage,
     markImageFailed,
@@ -436,6 +571,8 @@ const ImageResolver = (function () {
     resolveEpisodeThumbnail,
     resolvePrePlayerBackground,
     resolvePrePlayerPoster,
+    findTmdbSeasonForEpisode,
+    lazyFetchEpisodeStill,
     // exposed for tests / debugging
     scoreCandidate,
     titleScore,
