@@ -5315,6 +5315,16 @@ async function findTioAnimeSlugFromCatalog(title) {
   });
   if (found) return { slug: found.slug, title: found.title, match: "normalized-title" };
 
+  // Fallback: squashed matching (e.g. "Ichijouma Mankitsu-gurashi!" vs "Ichijouma Mankitsugurashi!")
+  const squashedNormalized = normalized.replace(/\s+/g, "");
+  if (squashedNormalized) {
+    const foundSquashed = (payload.items || []).find((item) => {
+      const itemTitle = normalizeTitle(item.title).replace(/\s+/g, "");
+      return itemTitle === squashedNormalized;
+    });
+    if (foundSquashed) return { slug: foundSquashed.slug, title: foundSquashed.title, match: "squashed-normalized-title" };
+  }
+
   const aniListMatch = await fetchAniListBestMatchForTitle(title).catch(() => null);
   const translatedTitles = [
     aniListMatch?.title?.romaji,
@@ -6221,6 +6231,23 @@ async function findAnimeAv1SlugForShow(show = {}) {
       const data = { slug, title: cleanAnimeAv1Title(item?.title || title) || title, match: "catalog-title" };
       animeAv1SlugSearchCache.set(searchKey, { data, ts: Date.now() });
       return data;
+    }
+  }
+
+  // Fallback: squashed matching
+  if (payload?.byTitle) {
+    for (const title of candidates) {
+      const key = normalizeTitle(title);
+      const squashedKey = key.replace(/\s+/g, "");
+      if (!squashedKey) continue;
+      for (const [mapKey, mapSlug] of Object.entries(payload.byTitle)) {
+        if (mapKey.replace(/\s+/g, "") === squashedKey) {
+          const item = itemsBySlug.get(mapSlug);
+          const data = { slug: mapSlug, title: cleanAnimeAv1Title(item?.title || title) || title, match: "catalog-title-squashed" };
+          animeAv1SlugSearchCache.set(searchKey, { data, ts: Date.now() });
+          return data;
+        }
+      }
     }
   }
 

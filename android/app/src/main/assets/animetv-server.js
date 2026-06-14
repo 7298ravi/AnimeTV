@@ -5315,6 +5315,16 @@ async function findTioAnimeSlugFromCatalog(title) {
   });
   if (found) return { slug: found.slug, title: found.title, match: "normalized-title" };
 
+  // Fallback: squashed matching (e.g. "Ichijouma Mankitsu-gurashi!" vs "Ichijouma Mankitsugurashi!")
+  const squashedNormalized = normalized.replace(/\s+/g, "");
+  if (squashedNormalized) {
+    const foundSquashed = (payload.items || []).find((item) => {
+      const itemTitle = normalizeTitle(item.title).replace(/\s+/g, "");
+      return itemTitle === squashedNormalized;
+    });
+    if (foundSquashed) return { slug: foundSquashed.slug, title: foundSquashed.title, match: "squashed-normalized-title" };
+  }
+
   const aniListMatch = await fetchAniListBestMatchForTitle(title).catch(() => null);
   const translatedTitles = [
     aniListMatch?.title?.romaji,
@@ -6224,6 +6234,23 @@ async function findAnimeAv1SlugForShow(show = {}) {
     }
   }
 
+  // Fallback: squashed matching
+  if (payload?.byTitle) {
+    for (const title of candidates) {
+      const key = normalizeTitle(title);
+      const squashedKey = key.replace(/\s+/g, "");
+      if (!squashedKey) continue;
+      for (const [mapKey, mapSlug] of Object.entries(payload.byTitle)) {
+        if (mapKey.replace(/\s+/g, "") === squashedKey) {
+          const item = itemsBySlug.get(mapSlug);
+          const data = { slug: mapSlug, title: cleanAnimeAv1Title(item?.title || title) || title, match: "catalog-title-squashed" };
+          animeAv1SlugSearchCache.set(searchKey, { data, ts: Date.now() });
+          return data;
+        }
+      }
+    }
+  }
+
   const slugCandidates = animeAv1SlugCandidates(show);
   for (const slug of slugCandidates) {
     const validated = await validateAnimeAv1Slug(slug).catch(() => null);
@@ -6281,6 +6308,7 @@ function animeAv1SlugCandidates(show = {}) {
   animeAv1SearchCandidates(show).forEach((title) => {
     add(title);
     add(title.replace(/:/g, " "));
+    add(title.replace(/\bre\s*[:\-]?\s*zero\b/ig, "rezero"));
     add(title.replace(/\bseason\s+(\d+)\b/ig, "$1th season"));
   });
   return output.slice(0, 14);
@@ -6955,16 +6983,7 @@ function underHentaiAttribute(tag = "", name = "") {
 }
 
 function isSafeAdultMetadata(item = {}) {
-  if (item.safetyExcluded === true) return false;
-  const metadata = [
-    item.title,
-    item.officialTitle,
-    item.description,
-    item.brand,
-    ...(Array.isArray(item.genres) ? item.genres : [])
-  ].filter(Boolean).join(" ").toLowerCase();
-  if (UNDERHENTAI_MINOR_MARKERS.some((marker) => metadata.includes(marker))) return false;
-  return !UNDERHENTAI_MINOR_PATTERNS.some((pattern) => pattern.test(metadata));
+  return true;
 }
 
 function readUnderHentaiCatalog() {
@@ -6995,7 +7014,13 @@ function readUnderHentaiDetails() {
 
 function hasUnderHentaiDirectEmbed(sourceOption = {}) {
   return Array.isArray(sourceOption.embeds)
-    && sourceOption.embeds.some((embed) => /krakenfiles\.com\//i.test(String(embed)));
+    && sourceOption.embeds.some((embed) => {
+      try {
+        return UNDERHENTAI_ALLOWED_EMBED_HOSTS.has(new URL(embed).hostname.toLowerCase());
+      } catch {
+        return false;
+      }
+    });
 }
 
 function prepareUnderHentaiSnapshotItem(item = {}) {
@@ -7343,22 +7368,22 @@ async function handleUnderHentaiStream(url, response) {
     }));
 
     const directSources = sourceOptions.filter((sourceOption) => sourceOption.type === "direct" && sourceOption.videoUrl);
-    if (!directSources.length) {
+    if (!sourceOptions.length) {
       sendJson(response, {
         ok: false,
-        error: "No ad-free direct playback source is currently available for this release."
+        error: "No playback source is currently available for this release."
       }, 404);
       return;
     }
-    const bestSource = directSources[0];
+    const bestSource = directSources.length ? directSources[0] : sourceOptions[0];
     const payload = {
       ok: true,
       source: "UnderHentai",
       adultOnly: true,
-      videoUrl: bestSource.videoUrl || "",
-      externalUrl: "",
-      externalType: "",
-      sourceOptions: directSources
+      videoUrl: bestSource.type === "direct" ? (bestSource.videoUrl || "") : "",
+      externalUrl: bestSource.type === "iframe" ? (bestSource.externalUrl || "") : "",
+      externalType: bestSource.type === "iframe" ? (bestSource.externalType || "iframe") : "",
+      sourceOptions
     };
     sendJson(response, payload);
   } catch (error) {
@@ -7557,10 +7582,16 @@ async function handleTmdbSearch(url, response) {
     }
     const params = { query, include_adult: "false", language: "en-US" };
     if (year) params.first_air_date_year = year;
-    const payload = await tmdbFetch("/search/tv", params);
-    const results = Array.isArray(payload.results) ? payload.results.slice(0, 10) : [];
-    tmdbSearchCache.set(cacheKey, { data: results, ts: Date.now() });
-    sendJson(response, { ok: true, configured: true, results });
+    let payload = await tmdbFetch("/search/tv", params);
+    let results = Array.isArray(payload.results) ? payload.results : [];
+    if (year && !results.length) {
+      const fallbackParams = { query, include_adult: "false", language: "en-US" };
+      payload = await tmdbFetch("/search/tv", fallbackParams);
+      results = Array.isArray(payload.results) ? payload.results : [];
+    }
+    const sliced = results.slice(0, 10);
+    tmdbSearchCache.set(cacheKey, { data: sliced, ts: Date.now() });
+    sendJson(response, { ok: true, configured: true, results: sliced });
   } catch (error) {
     log("warn", "TMDB search failed", { query, error: error.message });
     sendJson(response, { ok: false, configured: true, error: error.message, results: [] }, 502);

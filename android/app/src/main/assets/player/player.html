@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>ZenkaiTV Video Player</title>
+  <link href="https://vjs.zencdn.net/7.20.3/video-js.css" rel="stylesheet" />
   <style>
     html,
     body {
@@ -87,14 +88,29 @@
 
       var originalHost = streamProxyHost(uri);
       var sourceUrl = streamTypeFromUrl(uri) === "video/mp4" ? proxyUrl(uri) : uri;
+      var useControls = params.get("controls") === "1" || params.get("controls") === "true";
       var player = videojs("player", {
+        // "muted" autoplay is always permitted by browsers, so the video starts
+        // on the FIRST click that opened the player instead of needing a second
+        // "play" tap. Sound is restored on the first real user interaction.
         fluid: true,
-        controls: false,
-        autoplay: true,
+        controls: useControls,
+        autoplay: "muted",
+        muted: true,
         preload: "auto",
         responsive: true,
         sources: [{ src: sourceUrl, type: streamTypeFromUrl(uri) }]
       });
+
+      var _soundRestored = false;
+      function restoreSound() {
+        if (_soundRestored) return;
+        _soundRestored = true;
+        try { player.muted(false); var p = player.play(); if (p && p.catch) p.catch(function () {}); } catch (error) {}
+      }
+      // Kick the stream into playback as soon as it's able, in case the browser
+      // didn't honour autoplay (kept muted, so always allowed).
+      player.one("canplay", function () { var p = player.play(); if (p && p.catch) p.catch(function () {}); });
 
       if (videojs.Vhs && videojs.Vhs.xhr) {
         videojs.Vhs.xhr.beforeRequest = function (options) {
@@ -223,6 +239,26 @@
 
       send("initializing", 1);
       window._vid = player;
+
+      // Send user interaction events to parent to prevent control panel auto-hiding.
+      // The first genuine interaction (tap/click/key) also restores sound, since
+      // the stream began muted to satisfy autoplay.
+      ["mousemove", "mousedown", "touchstart", "click"].forEach(function (evt) {
+        window.addEventListener(evt, function () { send("activity", evt); });
+      });
+      ["click", "touchstart", "keydown"].forEach(function (evt) {
+        window.addEventListener(evt, restoreSound, { once: true });
+      });
+      // Also unmute when the parent forwards a play/activity command after the
+      // user clicked outside the iframe (e.g. the app's own Play button).
+      window.addEventListener("message", function (event) {
+        try {
+          var data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+          if (data && (data.vcmd === "play" || data.vcmd === "unmute")) restoreSound();
+        } catch (error) {}
+      });
+      // Send double click to toggle fullscreen on parent
+      window.addEventListener("dblclick", function () { send("toggleFullscreen", 1); });
     })();
   </script>
 </body>

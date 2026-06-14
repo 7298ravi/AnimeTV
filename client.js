@@ -7563,6 +7563,20 @@ function applyTioAnimeSlugFromMap(show, slugMap = _tioAnimeSlugTitleMap || {}) {
       return { slug: show.tioAnimeSlug, matchedTitle: title, key: strippedKey };
     }
   }
+  // Fallback: squashed matching (ignores minor hyphens/spaces differences)
+  for (const title of tioAnimeSearchCandidates(show)) {
+    const key = normalizeTitle(title);
+    const squashedKey = key.replace(/\s+/g, "");
+    if (!squashedKey) continue;
+    for (const [mapKey, mapSlug] of Object.entries(slugMap)) {
+      if (mapKey.replace(/\s+/g, "") === squashedKey) {
+        show.tioAnimeSlug = mapSlug;
+        show.tioAnimeSlugSource = title;
+        _tioAnimeSlugCache.set(`t:${mapKey}`, mapSlug);
+        return { slug: mapSlug, matchedTitle: title, key: mapKey };
+      }
+    }
+  }
   return null;
 }
 
@@ -7866,6 +7880,20 @@ function applyAnimeAv1SlugFromMap(show, slugMap = _animeAv1SlugTitleMap || {}) {
       show.animeAv1SlugSource = title;
       _animeAv1SlugCache.set(`t:${strippedKey}`, show.animeAv1Slug);
       return { slug: show.animeAv1Slug, matchedTitle: title, key: strippedKey };
+    }
+  }
+  // Fallback: squashed matching (ignores minor hyphens/spaces differences)
+  for (const title of animeAv1SearchCandidates(show)) {
+    const key = normalizeTitle(title);
+    const squashedKey = key.replace(/\s+/g, "");
+    if (!squashedKey) continue;
+    for (const [mapKey, mapSlug] of Object.entries(slugMap)) {
+      if (mapKey.replace(/\s+/g, "") === squashedKey) {
+        show.animeAv1Slug = mapSlug;
+        show.animeAv1SlugSource = title;
+        _animeAv1SlugCache.set(`t:${mapKey}`, mapSlug);
+        return { slug: mapSlug, matchedTitle: title, key: mapKey };
+      }
     }
   }
   return null;
