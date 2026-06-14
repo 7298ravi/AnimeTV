@@ -10055,6 +10055,16 @@ async function initSupabase() {
     if (config.ok && config.supabaseUrl && config.supabaseKey) {
       supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
       setupSupabaseAuth();
+      
+      // Check current session to see if user is already logged in
+      const { data: { session } } = await supabase.auth.getSession();
+      state.user = session?.user || null;
+      updateAuthUi();
+      
+      // Show login pop up first if user is not logged in (optional to close)
+      if (!state.user) {
+        showAuthModal("login");
+      }
     } else {
       console.warn("Supabase configuration is missing or inactive.");
       setupMockAuth();
@@ -10104,6 +10114,7 @@ function wireAuthEvents() {
   const avatarBtn = document.getElementById("userAvatarBtn");
   const dropdownMenu = document.getElementById("userDropdownMenu");
   const closeBtn = document.getElementById("authCloseBtn");
+  const skipBtn = document.getElementById("authSkipBtn");
   const overlay = document.getElementById("authOverlay");
   
   if (loginBtn) loginBtn.onclick = () => showAuthModal("login");
@@ -10117,6 +10128,14 @@ function wireAuthEvents() {
     if (dropdownMenu) dropdownMenu.hidden = true;
   });
   if (closeBtn) closeBtn.onclick = () => { if (overlay) overlay.hidden = true; };
+  if (skipBtn) skipBtn.onclick = () => { if (overlay) overlay.hidden = true; };
+  if (overlay) {
+    overlay.onclick = (e) => {
+      if (e.target === overlay) {
+        overlay.hidden = true;
+      }
+    };
+  }
   
   const gSignup = document.getElementById("goToSignupBtn");
   if (gSignup) gSignup.onclick = () => showAuthView("signup");
