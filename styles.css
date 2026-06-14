@@ -4812,6 +4812,20 @@ body.player-cinema-open .close-button {
   backdrop-filter: none !important;
 }
 
+/* Make player fill the screen in native fullscreen */
+:fullscreen .vidstream-player.is-cinema,
+:-webkit-full-screen .vidstream-player.is-cinema {
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  transform: none !important;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    Cinema mode — full-screen overlay
    ══════════════════════════════════════════════════════════════════════════
