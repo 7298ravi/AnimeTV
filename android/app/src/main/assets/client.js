@@ -2979,9 +2979,31 @@ function titleMatchScore(show, candidate) {
       const main = normalizeMatchTitle(mainTitle);
       const ani = normalizeMatchTitle(candidateTitle);
       if (!main || !ani) return;
-      if (main === ani) best = Math.max(best, 100);
-      else if (main.includes(ani) || ani.includes(main)) best = Math.max(best, 80);
-      else if (matchAnimeTitle(mainTitle, candidateTitle)) best = Math.max(best, 60);
+      
+      let score = 0;
+      if (main === ani) {
+        score = 100;
+      } else if (main.includes(ani) || ani.includes(main)) {
+        score = 80;
+        const mainWords = new Set(main.split(" "));
+        const aniWords = new Set(ani.split(" "));
+        const symDiff = new Set();
+        mainWords.forEach(w => { if (!aniWords.has(w)) symDiff.add(w); });
+        aniWords.forEach(w => { if (!mainWords.has(w)) symDiff.add(w); });
+        const stopWords = new Set([
+          "movie", "film", "pelicula", "tv", "special", "ova", "ona", "the", "of", "in", "a", "an",
+          "sub", "dub", "esp", "lat", "spanish", "latino", "la", "el", "y", "en", "con", "de", "del",
+          "un", "una", "las", "los", "capitulo", "episode", "ep", "temporada", "season", "part", "parte",
+          "hd", "sd", "bluray", "bd", "uncut", "censored", "uncensored"
+        ]);
+        const filteredDiff = [...symDiff].filter(w => w && !stopWords.has(w));
+        if (filteredDiff.length > 0) {
+          score = 0; 
+        }
+      } else if (matchAnimeTitle(mainTitle, candidateTitle)) {
+        score = 60;
+      }
+      best = Math.max(best, score);
     });
   });
   if (best && mainSeason === candidateSeason) best += 12;
@@ -5812,8 +5834,8 @@ function episodeThumb(episode = {}, season = {}, show = {}, repeatedImages = new
   if (!isAdultShow && isAdultImageUrl(ownImage)) ownImage = "";
   const comparable = comparableImageUrl(ownImage);
   const showLevelArt = new Set([
-    show.image, show.poster, show.cover, show.thumbnail, show.banner, show.bannerImage,
-    show.tmdbPoster, show.tmdbSeasonPoster, show.tmdbBackdrop, season?.image, season?.banner
+    show.image, show.poster, show.cover, show.thumbnail,
+    show.tmdbPoster, show.tmdbSeasonPoster, season?.image
   ].map(comparableImageUrl).filter(Boolean));
   if (!isAdultShow && comparable && (repeatedImages.has(comparable) || showLevelArt.has(comparable))) ownImage = "";
   if (typeof ImageResolver !== "undefined") {
@@ -5976,8 +5998,8 @@ function renderEpisodeList(show) {
           const isAdultShow = show.adultSource || (typeof AdultMode !== "undefined" && AdultMode.isAdultContent(show));
 
           const showLevelArt = new Set([
-            show.image, show.poster, show.cover, show.thumbnail, show.banner, show.bannerImage,
-            show.tmdbPoster, show.tmdbSeasonPoster, show.tmdbBackdrop, activeSeason?.image, activeSeason?.banner
+            show.image, show.poster, show.cover, show.thumbnail,
+            show.tmdbPoster, show.tmdbSeasonPoster, activeSeason?.image
           ].map(comparableImageUrl).filter(Boolean));
 
           const cleanFallback = (url) => {

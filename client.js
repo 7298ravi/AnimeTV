@@ -5834,8 +5834,8 @@ function episodeThumb(episode = {}, season = {}, show = {}, repeatedImages = new
   if (!isAdultShow && isAdultImageUrl(ownImage)) ownImage = "";
   const comparable = comparableImageUrl(ownImage);
   const showLevelArt = new Set([
-    show.image, show.poster, show.cover, show.thumbnail, show.banner, show.bannerImage,
-    show.tmdbPoster, show.tmdbSeasonPoster, show.tmdbBackdrop, season?.image, season?.banner
+    show.image, show.poster, show.cover, show.thumbnail,
+    show.tmdbPoster, show.tmdbSeasonPoster, season?.image
   ].map(comparableImageUrl).filter(Boolean));
   if (!isAdultShow && comparable && (repeatedImages.has(comparable) || showLevelArt.has(comparable))) ownImage = "";
   if (typeof ImageResolver !== "undefined") {
@@ -5998,8 +5998,8 @@ function renderEpisodeList(show) {
           const isAdultShow = show.adultSource || (typeof AdultMode !== "undefined" && AdultMode.isAdultContent(show));
 
           const showLevelArt = new Set([
-            show.image, show.poster, show.cover, show.thumbnail, show.banner, show.bannerImage,
-            show.tmdbPoster, show.tmdbSeasonPoster, show.tmdbBackdrop, activeSeason?.image, activeSeason?.banner
+            show.image, show.poster, show.cover, show.thumbnail,
+            show.tmdbPoster, show.tmdbSeasonPoster, activeSeason?.image
           ].map(comparableImageUrl).filter(Boolean));
 
           const cleanFallback = (url) => {
