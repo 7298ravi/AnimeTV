@@ -6454,6 +6454,7 @@ function renderVidstreamControls() {
         <span class="vid-time" id="playerTime">0:00 / 0:00</span>
         <span class="vid-spacer"></span>
         <button class="vid-tool-button focusable" type="button" data-player-fit aria-label="Video fit mode">${fit === "cover" ? "□" : fit === "fill" ? "▣" : "▭"}</button>
+        <button class="vid-tool-button focusable" type="button" data-player-panel="sources" aria-label="Servers and quality" title="Servers & quality">⇄</button>
         <button class="vid-tool-button focusable" type="button" data-player-panel="speed" aria-label="Playback speed">◴</button>
         <button class="vid-tool-button focusable" type="button" data-player-panel="subtitles" aria-label="Subtitles">▤</button>
         <button class="vid-tool-button focusable" type="button" data-player-cast aria-label="Cast">▱</button>
@@ -7141,6 +7142,29 @@ function renderPlayerPanelContent(type, episode, url, tracks = []) {
       ${tracks.length ? `<p>${tracks.length} subtitle file${tracks.length === 1 ? "" : "s"} connected.</p>` : `<p>No subtitle file is connected for this server.</p>`}
     `;
   }
+  if (type === "sources") {
+    const allSources = getEpisodePlaybackSources(episode);
+    const current = getSelectedEpisodeSource(episode);
+    const q = Number(state.uiPreferences.playerQuality || 0);
+    const qualities = [["0", "Auto"], ["1", "Highest"], ["2", "Second"], ["3", "Third"]];
+    return `
+      <strong>Servers</strong>
+      <div class="vid-panel-grid">
+        ${allSources.length ? allSources.map((source) => `
+          <button class="focusable vid-panel-choice ${current && source.id === current.id ? "is-active" : ""}" type="button" data-player-source="${escapeHtml(source.id)}">
+            <span class="choice-icon">${current && source.id === current.id ? "►" : "▷"}</span>
+            <span class="choice-text">${escapeHtml(source.label || source.id || "Server")}</span>
+          </button>
+        `).join("") : `<p>No other servers found for this episode.</p>`}
+      </div>
+      <strong>Quality</strong>
+      <div class="vid-panel-grid">
+        ${qualities.map(([val, label]) => `
+          <button class="focusable vid-panel-choice ${q === Number(val) ? "is-active" : ""}" type="button" data-quality="${val}">${label}</button>
+        `).join("")}
+      </div>
+    `;
+  }
   return `
     <strong>More options</strong>
     <div class="vid-panel-grid">
@@ -7172,6 +7196,37 @@ function openPlayerPanel(frame, type, video, episode, url, tracks = []) {
   panel.dataset.panelType = type;
   panel.innerHTML = renderPlayerPanelContent(type, episode, url, tracks);
   panel.hidden = false;
+  // Sources panel — switch server (re-mounts the player, staying in cinema).
+  panel.querySelectorAll("[data-player-source]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const ep = state.activeEpisode?.episode;
+      if (!ep) return;
+      ep.selectedSourceId = button.dataset.playerSource;
+      state.preferredSource = ep.selectedSourceId;
+      if (ep._failedSourceIds) ep._failedSourceIds.clear();
+      try {
+        localStorage.setItem(PREFERRED_SOURCE_KEY, state.preferredSource);
+      } catch (error) {
+        console.warn("Preferred source could not be saved:", error);
+      }
+      panel.hidden = true;
+      panel.innerHTML = "";
+      panel.dataset.panelType = "";
+      playActiveShow();
+    });
+  });
+  // Sources panel — quality (applies live to the iframe player; saved for next load).
+  panel.querySelectorAll("[data-quality]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const q = Number(button.dataset.quality) || 0;
+      saveUiPreferences({ playerQuality: q });
+      const apkFrame = frame.querySelector("#animePlayerFrame");
+      if (apkFrame) postApkPlayerCommand(apkFrame, "quality", q);
+      panel.querySelectorAll("[data-quality]").forEach((other) =>
+        other.classList.toggle("is-active", Number(other.dataset.quality) === q));
+      showToast(`Quality: ${["Auto", "Highest", "Second", "Third"][q] || "Auto"}`);
+    });
+  });
   panel.querySelectorAll("[data-rate]").forEach((button) => {
     button.addEventListener("click", () => {
       video.playbackRate = Number(button.dataset.rate) || 1;

@@ -4701,6 +4701,17 @@ body.adult-mode .vid-loader-text {
   box-shadow: 0 0.25rem 1rem rgba(138, 92, 255, 0.15);
 }
 
+/* Currently-selected server / quality in the in-player Sources panel */
+.vid-panel-choice.is-active {
+  color: #ffffff;
+  background: rgba(138, 92, 255, 0.34);
+  border-color: rgba(138, 92, 255, 0.6);
+}
+.vid-panel-choice.is-active .choice-icon {
+  opacity: 1;
+  color: #b9a3ff;
+}
+
 .vid-panel-choice .choice-icon {
   display: inline-flex;
   align-items: center;
