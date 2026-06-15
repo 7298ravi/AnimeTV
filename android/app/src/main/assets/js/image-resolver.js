@@ -20,7 +20,7 @@ const ImageResolver = (function () {
   "use strict";
 
   const TMDB_IMG_BASE = "https://image.tmdb.org/t/p";
-  const MATCH_CACHE_PREFIX = "zenkaitv:tmdb-match:v6:";
+  const MATCH_CACHE_PREFIX = "zenkaitv:tmdb-match:v7:";
   const MATCH_CACHE_TTL_MS = 1000 * 60 * 60 * 24; // Refresh airing episode stills daily.
   const FAILED_CACHE_KEY = "zenkaitv:img-failed:v1";
   const FAILED_CACHE_MAX = 400;
@@ -90,7 +90,17 @@ const ImageResolver = (function () {
 
     val = val.replace(/\bdiamond no ace\b/g, "ace of diamond")
              .replace(/\bdia no ace\b/g, "ace of diamond")
-             .replace(/\bdaiya no ace\b/g, "ace of diamond");
+             .replace(/\bdaiya no ace\b/g, "ace of diamond")
+             .replace(/\bshin seiki evangelion\b/g, "neon genesis evangelion")
+             .replace(/\byofukashi no uta\b/g, "call of the night")
+             .replace(/\byoukoso jitsuryoku shijou shugi no kyoushitsu e\b/g, "classroom of the elite")
+             .replace(/\bclassroom of (?:the\s+)?elite.*\b/g, "classroom of the elite")
+             .replace(/\bhime kishi wa barbaroi no yome\b/g, "the warrior princess and the barbaric king")
+             .replace(/\bkaoru hana wa rin to saku\b/g, "the fragrant flower blooms with dignity")
+             .replace(/\bbleach sennen kessen hen.*\b/g, "bleach")
+             .replace(/\bbleach thousand year blood war.*\b/g, "bleach")
+             .replace(/\bjujutsu kaisen shimetsu kaiyu.*\b/g, "jujutsu kaisen")
+             .replace(/\bjujutsu kaisen culling game.*\b/g, "jujutsu kaisen");
 
     return val
       .replace(/\b(season|part|tv|ova|ona|the|a|an)\b/g, "")
@@ -209,6 +219,28 @@ const ImageResolver = (function () {
     if (real.length === 1) return { season: real[0], reason: "only one TMDB season" };
 
     const titleToParse = anime.title || anime.romajiTitle || anime.englishTitle || "";
+    const lowerTitle = (typeof titleToParse === "string" ? titleToParse : JSON.stringify(titleToParse)).toLowerCase();
+    if (lowerTitle.includes("sennen kessen-hen") || lowerTitle.includes("thousand-year blood war")) {
+      const tybwSeason = real.find((s) => s.name.toLowerCase().includes("thousand-year blood war"));
+      if (tybwSeason) return { season: tybwSeason, reason: "Bleach Thousand-Year Blood War mapping" };
+    }
+
+    const animeTitles = [
+      anime.title?.english, anime.title?.romaji, anime.title?.native,
+      anime.englishTitle, anime.romajiTitle, anime.nativeTitle,
+      anime.title,
+      ...(Array.isArray(anime.synonyms) ? anime.synonyms : [])
+    ].map((t) => norm(t)).filter(Boolean);
+
+    for (const s of real) {
+      const sName = norm(s.name);
+      if (sName && sName.length > 4) {
+        if (animeTitles.some(t => t.includes(sName) || sName.includes(t))) {
+          return { season: s, reason: `season name match ("${s.name}")` };
+        }
+      }
+    }
+
     let parsedSeasonNum = null;
     if (typeof SeasonNormalization !== "undefined") {
       parsedSeasonNum = SeasonNormalization.parseTitle(titleToParse).seasonNumber;
@@ -417,7 +449,7 @@ const ImageResolver = (function () {
             let episodeOffset = 0;
             const animeYear = Number(anime.seasonYear || anime.year || 0);
             
-            if (Number(season.season_number) === 1 && tmdbEpisodes.length > 24 && animeYear) {
+            if (tmdbEpisodes.length > 12 && animeYear) {
               let matchingEp = tmdbEpisodes.find(ep => yearOf(ep.air_date) === animeYear);
               if (!matchingEp && animeYear) {
                 matchingEp = tmdbEpisodes.find(ep => {
@@ -427,7 +459,7 @@ const ImageResolver = (function () {
               }
               if (matchingEp) {
                 episodeOffset = matchingEp.episode_number - 1;
-                debug(`Grouped season detected. Mapped AniList Season to TMDB S1 starting at episode ${matchingEp.episode_number} (offset: ${episodeOffset})`);
+                debug(`Grouped season detected. Mapped AniList Season to TMDB S${season.season_number} starting at episode ${matchingEp.episode_number} (offset: ${episodeOffset})`);
               }
             }
 

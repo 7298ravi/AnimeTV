@@ -6472,6 +6472,15 @@ body.player-cinema-open .close-button {
   }
 }
 
+@keyframes overlay-fade-out {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 @keyframes modal-rise {
   0% {
     opacity: 0;
@@ -6481,6 +6490,28 @@ body.player-cinema-open .close-button {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
+
+@keyframes modal-fall {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(1.2rem) scale(0.985);
+  }
+}
+
+.watch-overlay.is-closing {
+  animation: overlay-fade-out 200ms ease both;
+}
+.watch-overlay.is-closing .watch-panel {
+  animation: modal-fall 200ms ease both;
+}
+body.reduce-motion .watch-overlay.is-closing,
+body.reduce-motion .watch-overlay.is-closing .watch-panel {
+  animation: none !important;
 }
 
 @keyframes play-pulse {
@@ -6832,7 +6863,7 @@ body.player-cinema-open .close-button {
 }
 
 /* ── Detail-tab panes reveal when switched (display:none → block replays) ──── */
-.detail-pane.is-active {
+.detail-pane.is-active.animate-switch {
   animation: fade-slide 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 

@@ -4818,6 +4818,7 @@ async function openShow(id, target = {}) {
   state.activeDetailTab = "episodes";
   state.activeSeasonIndex = 0;
   state.activeEpisodeChunkIndex = 0;
+  state.detailTabSwitched = true;
   const openToken = `${show.id || getShowKey(show)}:${Date.now()}`;
   state.activeOpenToken = openToken;
 
@@ -5300,26 +5301,31 @@ function applyOpenTarget(show, target = {}) {
 }
 
 function closeShow() {
+  if (overlay.classList.contains("is-closing")) return;
   stopActivePlayback();
   document.body.classList.remove("player-cinema-open");
   document.body.classList.remove("has-embedded-player");
-  overlay.hidden = true;
-  document.body.classList.remove("watch-detail-open");
-  state.activeShow = null;
-  state.activeEpisodeUrl = "";
-  state.activeEpisode = null;
-  state.activeDetailTab = "episodes";
-  state.activeSeasonIndex = 0;
-  state.activeEpisodeChunkIndex = 0;
-  if (episodeList) {
-    episodeList.hidden = true;
-    episodeList.innerHTML = "";
-  }
-  refreshFocusables();
-  const firstCard = document.querySelector(".show-card:not([hidden])");
-  if (firstCard) focusElement(firstCard);
-  // Returning to Home — resume the hero cover→trailer cycle.
-  if (state.route === "home") renderCarousel();
+  overlay.classList.add("is-closing");
+  setTimeout(() => {
+    overlay.hidden = true;
+    overlay.classList.remove("is-closing");
+    document.body.classList.remove("watch-detail-open");
+    state.activeShow = null;
+    state.activeEpisodeUrl = "";
+    state.activeEpisode = null;
+    state.activeDetailTab = "episodes";
+    state.activeSeasonIndex = 0;
+    state.activeEpisodeChunkIndex = 0;
+    if (episodeList) {
+      episodeList.hidden = true;
+      episodeList.innerHTML = "";
+    }
+    refreshFocusables();
+    const firstCard = document.querySelector(".show-card:not([hidden])");
+    if (firstCard) focusElement(firstCard);
+    // Returning to Home — resume the hero cover→trailer cycle.
+    if (state.route === "home") renderCarousel();
+  }, 200);
 }
 
 function stopActivePlayback() {
@@ -5867,7 +5873,7 @@ function renderEpisodeList(show) {
       <button class="detail-tab focusable ${tab === "episodes" ? "is-selected" : ""}" data-detail-tab="episodes" role="tab" aria-selected="${tab === "episodes"}">Episodes</button>
     </div>
 
-    <section class="detail-pane ${tab === "episodes" ? "is-active" : ""}" data-detail-pane="episodes">
+    <section class="detail-pane ${tab === "episodes" ? "is-active" : ""} ${state.detailTabSwitched ? "animate-switch" : ""}" data-detail-pane="episodes">
       <div class="ep-panel-head">
         <button class="ep-nav-btn focusable" data-season-step="-1" ${activeNavIndex <= 0 ? "disabled" : ""} aria-label="Previous season">
           <span aria-hidden="true">‹</span><span class="ep-nav-label">Prev</span>
@@ -6024,7 +6030,7 @@ function renderEpisodeList(show) {
       </div>
     </section>
 
-    <section class="detail-pane ${tab === "seasons" ? "is-active" : ""}" data-detail-pane="seasons">
+    <section class="detail-pane ${tab === "seasons" ? "is-active" : ""} ${state.detailTabSwitched ? "animate-switch" : ""}" data-detail-pane="seasons">
       <div class="season-card-grid">
         ${cardSeasons.map((season, i) => {
           const nav = seasonNav[i] || {};
@@ -6061,6 +6067,7 @@ function renderEpisodeList(show) {
   episodeList.querySelectorAll("[data-detail-tab]").forEach((tabBtn) => {
     tabBtn.addEventListener("click", () => {
       state.activeDetailTab = tabBtn.dataset.detailTab;
+      state.detailTabSwitched = true;
       renderEpisodeList(show);
       refreshFocusables();
     });
@@ -6142,6 +6149,7 @@ function renderEpisodeList(show) {
     state.activeEpisode = null;
     state.activeEpisodeUrl = "";
     state.activeEpisodeChunkIndex = 0;
+    state.detailTabSwitched = true;
     renderEpisodeList(ctx);
     resetVideoFrame();
     refreshFocusables();
@@ -6206,6 +6214,7 @@ function renderEpisodeList(show) {
       }
     });
   });
+  state.detailTabSwitched = false;
 }
 
 function episodeDisplaySubtitle(episode = {}) {
