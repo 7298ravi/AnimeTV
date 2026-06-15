@@ -101,12 +101,12 @@ const ImageResolver = (function () {
     return shared / new Set([...ta, ...tb]).size; // Jaccard 0..1
   }
 
-  function stripSequelWords(str) {
+    function stripSequelWords(str) {
     return norm(str)
       .replace(/[第]?\s*\d+\s*[季期话話集]/g, "")
       .replace(/[第]\s*[一二三四五六七八九十\d]+\s*[季期话話集]/g, "")
       .replace(/\b\d+(st|nd|rd|th)\b/g, "")
-      .replace(/\b(season|part|cour|capitulo|temp|temporada)\b/g, "")
+      .replace(/\b(season|part|cour|capitulo|temp|temporada|act|stage|arc|saga|chapter|volume|version|edition|special|specials|ova|ona|movie|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b/g, "")
       .replace(/\b(s\d+|p\d+|c\d+)\b/g, "")
       .replace(/\b\d+\b/g, "")
       .replace(/\b(ii|iii|iv|v|vi|vii|viii|ix|x)\b/g, "")
@@ -332,11 +332,18 @@ const ImageResolver = (function () {
         seenTitles.add(key);
         let payload;
         try {
-          const resp = await fetchWithTimeout(
+          let resp = await fetchWithTimeout(
             `./api/tmdb/search?q=${encodeURIComponent(title)}${year ? `&year=${encodeURIComponent(year)}` : ""}`,
             { cache: "no-store" }, 12000
           );
           payload = resp.ok ? await resp.json() : null;
+          if ((!payload || !payload.results || !payload.results.length) && year) {
+            resp = await fetchWithTimeout(
+              `./api/tmdb/search?q=${encodeURIComponent(title)}`,
+              { cache: "no-store" }, 12000
+            );
+            payload = resp.ok ? await resp.json() : null;
+          }
         } catch { payload = null; }
         if (payload && payload.configured === false) {
           _tmdbConfigured = false;
@@ -541,9 +548,11 @@ const ImageResolver = (function () {
       const payload = resp.ok ? await resp.json() : null;
       const eps = payload?.season?.episodes || [];
       let changed = false;
+      const maxEpNum = eps.length ? Math.max(...eps.map(e => Number(e.episode_number || 0))) : 0;
+      const isAbsoluteNumbering = maxEpNum > eps.length;
       for (const ep of eps) {
         const still = tmdbStillUrl(ep.still_path);
-        const absoluteEpNum = mapping.episodeOffset + ep.episode_number;
+        const absoluteEpNum = isAbsoluteNumbering ? Number(ep.episode_number) : (mapping.episodeOffset + Number(ep.episode_number));
         if (still) {
           if (!anime.tmdbEpisodeStills) anime.tmdbEpisodeStills = {};
           anime.tmdbEpisodeStills[absoluteEpNum] = still;
