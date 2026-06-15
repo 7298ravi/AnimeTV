@@ -202,7 +202,16 @@ const ImageResolver = (function () {
     if (!real.length) return { season: null, reason: "no numbered TMDB seasons" };
     if (real.length === 1) return { season: real[0], reason: "only one TMDB season" };
 
-    const animeSeasonNum = Number(anime.seasonNumber || 0) || null;
+    const titleToParse = anime.title || anime.romajiTitle || anime.englishTitle || "";
+    let parsedSeasonNum = null;
+    if (typeof SeasonNormalization !== "undefined") {
+      parsedSeasonNum = SeasonNormalization.parseTitle(titleToParse).seasonNumber;
+    }
+    if (!parsedSeasonNum && typeof extractSeasonNumber === "function") {
+      parsedSeasonNum = extractSeasonNumber(titleToParse, 1);
+    }
+
+    const animeSeasonNum = Number(anime.seasonNumber || parsedSeasonNum || 1);
     const animeYear = Number(anime.seasonYear || anime.year || 0) || null;
 
     // 1) Match by season number when it lines up with a TMDB season.
@@ -552,6 +561,9 @@ const ImageResolver = (function () {
       if (changed) {
         debug(`Lazy fetched S${mapping.seasonNumber} for show ${anime.anilistId || anime.id}. Triggering repaint.`);
         if (typeof render === "function") render();
+        if (typeof renderEpisodeList === "function" && typeof state !== "undefined" && state.activeShow?.id === anime.id) {
+          renderEpisodeList(state.activeShow);
+        }
       }
     } catch (err) {
       debug(`Lazy fetch failed: ${err.message}`);

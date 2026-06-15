@@ -5301,6 +5301,8 @@ function applyOpenTarget(show, target = {}) {
 
 function closeShow() {
   stopActivePlayback();
+  document.body.classList.remove("player-cinema-open");
+  document.body.classList.remove("has-embedded-player");
   overlay.hidden = true;
   document.body.classList.remove("watch-detail-open");
   state.activeShow = null;
@@ -5973,7 +5975,7 @@ function renderEpisodeList(show) {
             show.banner, show.bannerImage
           ].map(comparableImageUrl).filter(Boolean));
           const compSrc = comparableImageUrl(epImgSrc);
-          const isFallback = epImgSrc && (
+          const isFallback = !isAdultShow && epImgSrc && (
             backdropArt.has(compSrc) ||
             repeatedImages.has(compSrc) ||
             showLevelArt.has(compSrc)
@@ -6186,8 +6188,22 @@ function renderEpisodeList(show) {
       state.activeEpisodeChunkIndex = idx;
       renderEpisodeList(show);
       const newBtn = episodeList.querySelector(`[data-chunk-index="${idx}"]`);
-      if (newBtn) focusElement(newBtn);
-      else refreshFocusables();
+      if (newBtn) {
+        try { newBtn.focus({ preventScroll: true }); } catch (_) { newBtn.focus(); }
+        setTvFocus(newBtn);
+        const container = newBtn.closest(".ep-chunks-container");
+        if (container) {
+          const btnLeft = newBtn.offsetLeft;
+          const btnWidth = newBtn.clientWidth;
+          const containerWidth = container.clientWidth;
+          container.scrollTo({
+            left: btnLeft - (containerWidth / 2) + (btnWidth / 2),
+            behavior: "smooth"
+          });
+        }
+      } else {
+        refreshFocusables();
+      }
     });
   });
 }
