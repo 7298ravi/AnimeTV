@@ -81,12 +81,18 @@ const ImageResolver = (function () {
 
   // ── Title matching + confidence scoring ─────────────────────────────────────
   function norm(value) {
-    return String(value || "")
+    let val = String(value || "")
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       // Preserve a-z, 0-9, Chinese ideographs, Hiragana, Katakana, and full-width alphanumeric
-      .replace(/[^a-z0-9\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uff10-\uff19\uff41-\uff5a\uff21-\uff3a]+/gi, " ")
+      .replace(/[^a-z0-9\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uff10-\uff19\uff41-\uff5a\uff21-\uff3a]+/gi, " ");
+
+    val = val.replace(/\bdiamond no ace\b/g, "ace of diamond")
+             .replace(/\bdia no ace\b/g, "ace of diamond")
+             .replace(/\bdaiya no ace\b/g, "ace of diamond");
+
+    return val
       .replace(/\b(season|part|tv|ova|ona|the|a|an)\b/g, "")
       .replace(/\s+/g, " ")
       .trim();

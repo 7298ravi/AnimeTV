@@ -10263,7 +10263,7 @@ function hasSupabaseSession() {
 
 async function initSupabase() {
   try {
-    const res = await fetch("/api/config");
+    const res = await fetch("/api/config", { cache: "no-store" });
     const config = await res.json();
     if (config.ok && config.supabaseUrl && config.supabaseKey) {
       if (!window.supabase) {
