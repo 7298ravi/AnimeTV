@@ -5363,9 +5363,9 @@ function toggleFavorite() {
   render();
   
   // Database sync
-  if (supabase && state.user) {
+  if (supabaseClient && state.user) {
     if (isAdding) {
-      supabase.from("favorites").upsert({
+      supabaseClient.from("favorites").upsert({
         user_id: state.user.id,
         anime_id: String(id),
         anime_title: state.activeShow.title || "",
@@ -5374,7 +5374,7 @@ function toggleFavorite() {
         if (error) console.warn("DB favorite upsert error:", error.message);
       });
     } else {
-      supabase.from("favorites").delete()
+      supabaseClient.from("favorites").delete()
         .eq("user_id", state.user.id)
         .eq("anime_id", String(id))
         .then(({ error }) => {
@@ -7600,8 +7600,8 @@ function recordWatchProgress({ show, season, episode, positionSec, durationSec, 
   scheduleContinueWatchingRefresh();
 
   // Database sync
-  if (supabase && state.user) {
-    supabase.from("watch_progress").upsert({
+  if (supabaseClient && state.user) {
+    supabaseClient.from("watch_progress").upsert({
       user_id: state.user.id,
       anime_id: getAnimeTrackId(show),
       episode_id: key,
@@ -7810,8 +7810,8 @@ function clearContinueWatchingList(isAdult = false) {
   if (keysToDelete.length > 0) {
     persistWatchMap();
     renderContinueWatching();
-    if (supabase && state.user) {
-      supabase
+    if (supabaseClient && state.user) {
+      supabaseClient
         .from("watch_progress")
         .delete()
         .eq("user_id", state.user.id)
@@ -10237,7 +10237,7 @@ if (typeof AdultMode !== "undefined") {
 }
 
 // ── Supabase Authentication & Social Logins ──────────────────────────────────
-let supabase = null;
+let supabaseClient = null;
 
 function loadExternalScript(url) {
   return new Promise((resolve, reject) => {
@@ -10269,11 +10269,11 @@ async function initSupabase() {
       if (!window.supabase) {
         await loadExternalScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2");
       }
-      supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
+      supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
       setupSupabaseAuth();
       
       // Check current session to see if user is already logged in
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await supabaseClient.auth.getSession();
       state.user = session?.user || null;
       updateAuthUi();
       
@@ -10293,8 +10293,8 @@ async function initSupabase() {
 }
 
 function setupSupabaseAuth() {
-  if (!supabase) return;
-  supabase.auth.onAuthStateChange((event, session) => {
+  if (!supabaseClient) return;
+  supabaseClient.auth.onAuthStateChange((event, session) => {
     state.user = session?.user || null;
     updateAuthUi();
     if (event === "SIGNED_IN") {
@@ -10453,13 +10453,13 @@ async function handleLoginSubmit() {
     showAuthError(errorMsg, "Please enter both email and password.");
     return;
   }
-  if (!supabase) {
+  if (!supabaseClient) {
     showAuthError(errorMsg, "Authentication service is not available.");
     return;
   }
   setAuthLoading(submitBtn, true);
   try {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
     if (error) throw error;
     document.getElementById("authOverlay").hidden = true;
   } catch (err) {
@@ -10483,13 +10483,13 @@ async function handleSignupSubmit() {
     showAuthError(errorMsg, "Password must be at least 6 characters.");
     return;
   }
-  if (!supabase) {
+  if (!supabaseClient) {
     showAuthError(errorMsg, "Authentication service is not available.");
     return;
   }
   setAuthLoading(submitBtn, true);
   try {
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { error } = await supabaseClient.auth.signUp({ email, password });
     if (error) throw error;
     showAuthSuccess(errorMsg, "Registration successful! Please check your email for confirmation.");
   } catch (err) {
@@ -10509,13 +10509,13 @@ async function handleForgotSubmit() {
     showAuthError(errorMsg, "Please enter your email.");
     return;
   }
-  if (!supabase) {
+  if (!supabaseClient) {
     showAuthError(errorMsg, "Authentication service is not available.");
     return;
   }
   setAuthLoading(submitBtn, true);
   try {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/#profile`
     });
     if (error) throw error;
@@ -10528,20 +10528,20 @@ async function handleForgotSubmit() {
 }
 
 async function handleLogout() {
-  if (supabase) {
-    await supabase.auth.signOut();
+  if (supabaseClient) {
+    await supabaseClient.auth.signOut();
   }
   state.user = null;
   updateAuthUi();
 }
 
 async function handleSocialLogin(provider) {
-  if (!supabase) {
+  if (!supabaseClient) {
     alert("Authentication is not configured.");
     return;
   }
   try {
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { error } = await supabaseClient.auth.signInWithOAuth({
       provider,
       options: {
         redirectTo: `${window.location.origin}/`
@@ -10610,9 +10610,9 @@ function renderProfile() {
 }
 
 async function syncWatchProgressFromDatabase() {
-  if (!supabase || !state.user) return;
+  if (!supabaseClient || !state.user) return;
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from("watch_progress")
       .select("*")
       .eq("user_id", state.user.id);
@@ -10662,9 +10662,9 @@ async function syncWatchProgressFromDatabase() {
 }
 
 async function syncFavoritesFromDatabase() {
-  if (!supabase || !state.user) return;
+  if (!supabaseClient || !state.user) return;
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from("favorites")
       .select("anime_id")
       .eq("user_id", state.user.id);
