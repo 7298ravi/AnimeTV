@@ -463,7 +463,7 @@ const ImageResolver = (function () {
     anime = anime || {};
     tmdbData = tmdbData || {};
     const url = firstValidImage([
-      tmdbData.episodeStill || getEpisodeStill(anime, episode),
+      tmdbData.episodeStill !== undefined ? tmdbData.episodeStill : getEpisodeStill(anime, episode),
       episode?.image, episode?.thumbnail, episode?.still, episode?.snapshot
     ]);
     return url || "";

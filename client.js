@@ -1807,21 +1807,49 @@ function buildLatestEpisodesList(limit = HOME_CARD_LIMIT) {
 
 async function loadAnimeAv1Latest(force = false) {
   if (state.av1LatestLoading) return;
+
+  // 1. Try to load from localStorage cache first if state is empty
+  if (!state.av1Latest || !state.av1Latest.length) {
+    try {
+      const cached = localStorage.getItem("zenkaitv-av1-latest-cache");
+      const cachedAt = localStorage.getItem("zenkaitv-av1-latest-cache-at");
+      if (cached) {
+        state.av1Latest = JSON.parse(cached);
+        state.av1LatestAt = Number(cachedAt) || 0;
+        // Paint immediately with cached data
+        render();
+        warmVisibleShowMetadata(buildLatestEpisodesList(HOME_CARD_LIMIT), HOME_CARD_LIMIT);
+      }
+    } catch (e) {
+      console.warn("Failed to load av1-latest cache:", e);
+    }
+  }
+
+  // 2. Decide if we need to fetch fresh data
   const fresh = state.av1Latest?.length && Date.now() - (state.av1LatestAt || 0) < 5 * 60 * 1000;
   if (fresh && !force) return;
+
   state.av1LatestLoading = true;
   try {
     const res = await fetchWithTimeout("./api/animeav1/latest", { cache: "no-store" }, 9000);
     if (!res.ok) throw new Error(`AnimeAV1 latest HTTP ${res.status}`);
     const json = await res.json();
     if (Array.isArray(json.items) && json.items.length) {
+      const isChanged = JSON.stringify(state.av1Latest) !== JSON.stringify(json.items);
       state.av1Latest = json.items;
       state.av1LatestAt = Date.now();
-      render();   // repaint the rail in AnimeAV1 order
-      warmVisibleShowMetadata(buildLatestEpisodesList(HOME_CARD_LIMIT), HOME_CARD_LIMIT);
+
+      // Save to cache
+      localStorage.setItem("zenkaitv-av1-latest-cache", JSON.stringify(json.items));
+      localStorage.setItem("zenkaitv-av1-latest-cache-at", String(state.av1LatestAt));
+
+      if (isChanged) {
+        render();   // repaint the rail in AnimeAV1 order
+        warmVisibleShowMetadata(buildLatestEpisodesList(HOME_CARD_LIMIT), HOME_CARD_LIMIT);
+      }
     }
-  } catch (_) {
-    // Keep the airing-based fallback ordering already on screen.
+  } catch (err) {
+    console.error("Failed to fetch fresh av1-latest:", err);
   } finally {
     state.av1LatestLoading = false;
   }
@@ -2951,9 +2979,31 @@ function titleMatchScore(show, candidate) {
       const main = normalizeMatchTitle(mainTitle);
       const ani = normalizeMatchTitle(candidateTitle);
       if (!main || !ani) return;
-      if (main === ani) best = Math.max(best, 100);
-      else if (main.includes(ani) || ani.includes(main)) best = Math.max(best, 80);
-      else if (matchAnimeTitle(mainTitle, candidateTitle)) best = Math.max(best, 60);
+      
+      let score = 0;
+      if (main === ani) {
+        score = 100;
+      } else if (main.includes(ani) || ani.includes(main)) {
+        score = 80;
+        const mainWords = new Set(main.split(" "));
+        const aniWords = new Set(ani.split(" "));
+        const symDiff = new Set();
+        mainWords.forEach(w => { if (!aniWords.has(w)) symDiff.add(w); });
+        aniWords.forEach(w => { if (!mainWords.has(w)) symDiff.add(w); });
+        const stopWords = new Set([
+          "movie", "film", "pelicula", "tv", "special", "ova", "ona", "the", "of", "in", "a", "an",
+          "sub", "dub", "esp", "lat", "spanish", "latino", "la", "el", "y", "en", "con", "de", "del",
+          "un", "una", "las", "los", "capitulo", "episode", "ep", "temporada", "season", "part", "parte",
+          "hd", "sd", "bluray", "bd", "uncut", "censored", "uncensored"
+        ]);
+        const filteredDiff = [...symDiff].filter(w => w && !stopWords.has(w));
+        if (filteredDiff.length > 0) {
+          score = 0; 
+        }
+      } else if (matchAnimeTitle(mainTitle, candidateTitle)) {
+        score = 60;
+      }
+      best = Math.max(best, score);
     });
   });
   if (best && mainSeason === candidateSeason) best += 12;
@@ -4810,6 +4860,8 @@ function syncRouteVisibility() {
       if (!isHome) {
         section.classList.add("is-hidden");
         section.setAttribute("aria-hidden", "true");
+      } else {
+        renderContinueWatching();
       }
       return;
     }
@@ -5656,6 +5708,7 @@ function applyWatchBackdrop(show, season) {
   // cleanly. A poster/cover fallback is vertical, so cropping it with `cover`
   // looks bad — we show it `contain` over a blurred fill of itself instead.
   const wideSources = new Set([
+    show.images?.backdrop, show.images?.banner,
     show.tmdbBackdrop, show.highQualityBackground, show.banner, show.bannerImage,
     season?.tmdbBackdrop, show.backdrop, show.heroImage, show.wideImage,
     show.landscapeImage, show.jikanBackground, season?.highQualityBackground,
@@ -5777,26 +5830,30 @@ function repeatedEpisodeArtwork(episodes = [], show = {}) {
 
 function episodeThumb(episode = {}, season = {}, show = {}, repeatedImages = new Set()) {
   let ownImage = hqImage(episode.image || episode.thumbnail || episode.still || episode.snapshot || "");
+  const isAdultShow = show.adultSource || (typeof AdultMode !== "undefined" && AdultMode.isAdultContent(show));
+  if (!isAdultShow && isAdultImageUrl(ownImage)) ownImage = "";
   const comparable = comparableImageUrl(ownImage);
   const showLevelArt = new Set([
     show.image, show.poster, show.cover, show.thumbnail, show.banner, show.bannerImage,
     show.tmdbPoster, show.tmdbSeasonPoster, show.tmdbBackdrop, season?.image, season?.banner
   ].map(comparableImageUrl).filter(Boolean));
-  const isAdultShow = show.adultSource || (typeof AdultMode !== "undefined" && AdultMode.isAdultContent(show));
   if (!isAdultShow && comparable && (repeatedImages.has(comparable) || showLevelArt.has(comparable))) ownImage = "";
   if (typeof ImageResolver !== "undefined") {
     let tmdbStill = ImageResolver.getEpisodeStill(show, episode);
+    if (!isAdultShow && isAdultImageUrl(tmdbStill)) tmdbStill = "";
     const num = Number(episode?.episode || episode?.episodeNumber || 0);
     if (show.tmdbId && num && !tmdbStill) {
       ImageResolver.lazyFetchEpisodeStill(show, num);
     }
     const tmdbComparable = comparableImageUrl(tmdbStill);
     if (!isAdultShow && tmdbComparable && (repeatedImages.has(tmdbComparable) || showLevelArt.has(tmdbComparable))) tmdbStill = "";
-    return ImageResolver.resolveEpisodeThumbnail(
+    const resolved = ImageResolver.resolveEpisodeThumbnail(
       { ...episode, image: ownImage, thumbnail: ownImage, still: ownImage, snapshot: ownImage },
       show,
       { episodeStill: tmdbStill }
     );
+    if (!isAdultShow && isAdultImageUrl(resolved)) return "";
+    return resolved;
   }
   return ownImage;
 }
@@ -5938,15 +5995,27 @@ function renderEpisodeList(show) {
           const tmdbStill = (typeof ImageResolver !== "undefined") ? ImageResolver.getEpisodeStill(show, { episode: num }) : "";
           const epOwnImage = episode.image || episode.thumbnail || episode.still || episode.snapshot || epMeta?.thumbnail || "";
           const epBackdrop = show.images?.backdrop || show.images?.banner || show.tmdbBackdrop || show.banner || show.bannerImage || "";
-          const epPoster = show.images?.poster || show.images?.cover || show.tmdbSeasonPoster || show.tmdbPoster || show.coverImageLarge || show.image || show.coverImage || "";
+          const isAdultShow = show.adultSource || (typeof AdultMode !== "undefined" && AdultMode.isAdultContent(show));
+
+          const showLevelArt = new Set([
+            show.image, show.poster, show.cover, show.thumbnail, show.banner, show.bannerImage,
+            show.tmdbPoster, show.tmdbSeasonPoster, show.tmdbBackdrop, activeSeason?.image, activeSeason?.banner
+          ].map(comparableImageUrl).filter(Boolean));
+
+          const cleanFallback = (url) => {
+            if (!url) return "";
+            const comp = comparableImageUrl(url);
+            if (comp && (repeatedImages.has(comp) || showLevelArt.has(comp))) return "";
+            return url;
+          };
+
           const epFallbacks = [
             thumb,
-            tmdbStill,
-            epOwnImage,
-            epBackdrop,
-            epPoster,
-            "logo-round.png"
-          ].map(u => String(u || "").trim()).filter(Boolean);
+            cleanFallback(tmdbStill),
+            cleanFallback(epOwnImage),
+            cleanFallback(epBackdrop)
+          ].map(u => String(u || "").trim())
+           .filter(u => u && (isAdultShow || !isAdultImageUrl(u)));
           const epImgSrc = epFallbacks[0] || "";
           const epFallbackData = epFallbacks.length
             ? ` data-image-fallbacks="${escapeHtml(encodeURIComponent(JSON.stringify(epFallbacks)))}" data-image-fallback-index="0"`
@@ -7469,8 +7538,30 @@ function readStoredMap(key) {
 let _watchMapCache = null;
 let _activeProgressPlayer = null;   // { player, episode } for save-on-close
 let _nativePlayContext = null;      // { show, season, episode, key } for native player callbacks
+function isAdultImageUrl(url) {
+  if (!url) return false;
+  const l = url.toLowerCase();
+  return l.includes("underhentai") || l.includes("hentai") || l.includes("/adult/") || l.includes("h-hentai") || l.includes("adultimage") || l.includes("hentaicdn");
+}
+
+function sanitizeWatchEntry(entry) {
+  if (!entry) return;
+  const isAdult = isEntryAdult(entry);
+  if (!isAdult) {
+    if (isAdultImageUrl(entry.thumb)) entry.thumb = "";
+    if (isAdultImageUrl(entry.poster)) entry.poster = "";
+  }
+}
+
 function getWatchMap() {
-  if (!_watchMapCache) _watchMapCache = readStoredMap(RESUME_POSITIONS_KEY);
+  if (!_watchMapCache) {
+    _watchMapCache = readStoredMap(RESUME_POSITIONS_KEY);
+    for (const key in _watchMapCache) {
+      if (_watchMapCache[key]) {
+        sanitizeWatchEntry(_watchMapCache[key]);
+      }
+    }
+  }
   return _watchMapCache;
 }
 function persistWatchMap() {
@@ -7512,6 +7603,7 @@ function recordWatchProgress({ show, season, episode, positionSec, durationSec, 
     updatedAt: Date.now(),
     isAdult: isAdult || prev.isAdult || false
   };
+  sanitizeWatchEntry(map[key]);
   persistWatchMap();
   scheduleContinueWatchingRefresh();
 
@@ -7583,7 +7675,13 @@ function isEntryAdult(entry) {
 }
 
 function renderContinueCardHtml(e) {
-  const img = e.thumb || e.poster || "";
+  let img = e.thumb || e.poster || "";
+  if (!img) {
+    const show = state.shows.find((s) => String(s.id) === String(e.showId || e.animeId));
+    if (show) {
+      img = show.image || show.poster || show.banner || "";
+    }
+  }
   const sub = `S${e.season}E${e.episode} · ${e.progress}%`;
   return `
   <button class="show-card continue-card focusable" type="button"
@@ -7626,6 +7724,10 @@ function getContinueWatchingList(limit = 20) {
   const map = getWatchMap();
   return Object.values(map)
     .filter((e) => e && e.progress > 0 && e.progress < 90 && !e.watched)
+    .map((e) => {
+      sanitizeWatchEntry(e);
+      return e;
+    })
     .sort((a, b) => (b.lastWatchedAt || 0) - (a.lastWatchedAt || 0))
     .slice(0, limit);
 }
@@ -7637,9 +7739,10 @@ function scheduleContinueWatchingRefresh() {
 }
 
 function renderContinueWatching() {
+  const isAdultModeOn = typeof AdultMode !== "undefined" && AdultMode.isEnabled();
   const allEntries = getContinueWatchingList(20);
-  const regularEntries = allEntries.filter(e => !isEntryAdult(e));
-  const adultEntries = allEntries.filter(e => isEntryAdult(e));
+  const regularEntries = isAdultModeOn ? [] : allEntries.filter(e => !isEntryAdult(e));
+  const adultEntries = isAdultModeOn ? allEntries.filter(e => isEntryAdult(e)) : [];
 
   // Render Regular section
   const regSection = document.querySelector("#continueWatching");
@@ -8136,6 +8239,11 @@ function mergeTioAnimeSourcesIntoEpisode(show, episode, data, slug, epNum) {
   const existing = new Set((episode.sourceOptions || []).map(s => s.videoUrl || s.externalUrl));
   const newOptions = data.sources
     .filter(s => s.url && !existing.has(s.url))
+    .filter(s => {
+      const urlLow = String(s.url).toLowerCase();
+      const provLow = String(s.provider).toLowerCase();
+      return !urlLow.includes("mega.nz") && !urlLow.includes("mediafire.com") && !provLow.includes("mega") && !provLow.includes("mediafire");
+    })
     .map((s, index) => {
       const rank = embedProviderRank(s.provider);
       return {
@@ -9619,6 +9727,7 @@ function refreshFocusables() {
 
 function setTvFocus(element) {
   refreshFocusables();
+  if (lastInputWasPointer) return;
   element?.classList.add("is-tv-focused");
 }
 
@@ -9718,7 +9827,17 @@ document.addEventListener("focusin", (event) => {
 });
 
 document.addEventListener("pointerdown", () => {
-  lastInputWasPointer = true;
+  if (!lastInputWasPointer) {
+    lastInputWasPointer = true;
+    refreshFocusables();
+  }
+});
+
+document.addEventListener("pointermove", () => {
+  if (!lastInputWasPointer) {
+    lastInputWasPointer = true;
+    refreshFocusables();
+  }
 });
 
 document.querySelectorAll("[data-route]").forEach((element) => {
@@ -10145,18 +10264,25 @@ function updateAuthUi() {
   const loginBtn = document.getElementById("authLoginBtn");
   const menuContainer = document.getElementById("userProfileMenuContainer");
   const initials = document.getElementById("userAvatarInitials");
+  const avatarImg = document.getElementById("userAvatarImg");
   const profileEmail = document.getElementById("profileEmail");
+  const profileAvatarLarge = document.getElementById("profileAvatarLarge");
   
   if (state.user) {
     if (loginBtn) loginBtn.hidden = true;
     if (menuContainer) menuContainer.hidden = false;
     const email = state.user.email || "";
     if (initials) initials.textContent = email.substring(0, 2).toUpperCase();
+    
+    const avatarUrl = `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(email)}`;
+    if (avatarImg) avatarImg.src = avatarUrl;
     if (profileEmail) profileEmail.textContent = email;
+    if (profileAvatarLarge) profileAvatarLarge.src = avatarUrl;
   } else {
     if (loginBtn) loginBtn.hidden = false;
     if (menuContainer) menuContainer.hidden = true;
     if (profileEmail) profileEmail.textContent = "";
+    if (profileAvatarLarge) profileAvatarLarge.src = "https://api.dicebear.com/7.x/adventurer/svg?seed=guest";
     if (state.route === "profile") {
       setRoute("home");
     }
@@ -10427,9 +10553,13 @@ function renderProfile() {
   const avatarEl = document.getElementById("profileAvatarLarge");
   
   if (state.user) {
-    if (emailEl) emailEl.textContent = state.user.email || "";
-    if (avatarEl) avatarEl.textContent = (state.user.email || "U").substring(0, 2).toUpperCase();
+    const email = state.user.email || "";
+    if (emailEl) emailEl.textContent = email;
+    if (avatarEl) {
+      avatarEl.src = `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(email)}`;
+    }
   } else {
+    if (avatarEl) avatarEl.src = "https://api.dicebear.com/7.x/adventurer/svg?seed=guest";
     setRoute("home");
     showAuthModal("login");
   }
@@ -10476,6 +10606,7 @@ async function syncWatchProgressFromDatabase() {
             updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
             isAdult
           };
+          sanitizeWatchEntry(map[key]);
         }
       });
       persistWatchMap();

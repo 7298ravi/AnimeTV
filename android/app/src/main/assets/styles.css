@@ -8310,43 +8310,63 @@ body.reduce-motion .theme-flash { animation-duration: 1ms; }
 /* ──────────────────────────────────────────────────────────────────────────
    Supabase Authentication UI & Profiles
    ────────────────────────────────────────────────────────────────────────── */
-.auth-controls-container {
+.topbar-auth {
+  position: fixed;
+  top: clamp(0.75rem, 1.7vh, 1.3rem);
+  right: calc(clamp(0.75rem, 1.7vw, 1.3rem) + 3.4rem);
+  z-index: 60;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  width: 100%;
-  margin: 1.5rem auto 0.5rem;
-  padding: 0 0.4rem;
-  z-index: 50;
+  gap: 0.5rem;
 }
-.auth-header-btn {
-  background: linear-gradient(135deg, var(--cyan, #00d2ff), var(--rose, #7a2bd6));
-  color: #fff;
-  border: none;
-  padding: 0.45rem 1.1rem;
+
+body.player-cinema-open .topbar-auth,
+body.has-embedded-player .topbar-auth,
+body.is-tv .topbar-auth {
+  display: none !important;
+}
+
+.topbar-auth-btn {
+  display: grid;
+  place-items: center;
+  width: 2.9rem;
+  height: 2.9rem;
+  border: 0.08rem solid rgba(255, 255, 255, 0.18);
   border-radius: 999rem;
-  font-weight: 700;
-  font-size: 0.82rem;
-  letter-spacing: 0.03em;
-  box-shadow: 0 0.2rem 0.8rem rgba(0, 210, 255, 0.35);
+  background: rgba(13, 14, 24, 0.6);
+  color: rgba(240, 242, 252, 0.92);
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, width 0.2s ease, height 0.2s ease, border-radius 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
+  backdrop-filter: blur(12px) saturate(1.1);
+  box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.35), inset 0 0 0 0.08rem rgba(255, 255, 255, 0.04);
+  transition: background 180ms ease, transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  padding: 0;
+  outline: none;
+  overflow: hidden;
 }
-.auth-header-btn .auth-btn-icon {
-  width: 1.15rem;
-  height: 1.15rem;
-  display: none !important;
+.topbar-auth-btn:is(:hover, :focus-visible) {
+  background: rgba(36, 38, 58, 0.78);
+  border-color: rgba(255, 255, 255, 0.34);
+  transform: scale(1.07);
+  box-shadow: 0 0.7rem 1.9rem rgba(0, 0, 0, 0.42);
+  outline: 0;
 }
-.auth-header-btn[hidden] {
-  display: none !important;
+.topbar-auth-btn:active {
+  transform: scale(0.94);
 }
-.auth-header-btn:is(:hover, :focus-visible, .is-tv-focused) {
-  transform: scale(1.05);
-  box-shadow: 0 0.3rem 1.2rem rgba(0, 210, 255, 0.55);
+.topbar-auth-btn.is-tv-focused {
+  outline: 0;
+  border-color: transparent;
+  box-shadow: 0 0 0 0.2rem var(--accent, #8a5cff), 0 0.7rem 1.9rem rgba(0, 0, 0, 0.42);
+  transform: scale(1.08);
+}
+
+.topbar-avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
 }
 
 .user-profile-menu-container {
@@ -8355,54 +8375,6 @@ body.reduce-motion .theme-flash { animation-duration: 1ms; }
 }
 .user-profile-menu-container[hidden] {
   display: none !important;
-}
-
-/* Collapsed sidebar styling for auth controls */
-body.sidebar-collapsed .auth-controls-container {
-  padding: 0;
-}
-body.sidebar-collapsed .auth-header-btn {
-  width: 2.2rem;
-  height: 2.2rem;
-  padding: 0;
-  border-radius: 50%;
-  box-shadow: 0 0.2rem 0.6rem rgba(0, 210, 255, 0.25);
-}
-body.sidebar-collapsed .auth-header-btn .auth-btn-text {
-  display: none !important;
-}
-body.sidebar-collapsed .auth-header-btn .auth-btn-icon {
-  display: block !important;
-}
-body.sidebar-collapsed .user-profile-menu-container {
-  display: flex;
-  justify-content: center;
-  width: 100%;
-}
-.user-avatar-btn {
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 50%;
-  background: var(--bg-raised, #1b1d2e);
-  border: 2px solid var(--cyan, #00d2ff);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  box-shadow: 0 0 0.8rem rgba(0, 210, 255, 0.25);
-  transition: transform 0.2s ease, border-color 0.2s ease;
-}
-.user-avatar-btn:is(:hover, :focus-visible, .is-tv-focused) {
-  transform: scale(1.06);
-  border-color: #fff;
-  box-shadow: 0 0 1.2rem rgba(0, 210, 255, 0.45);
-}
-.user-avatar-initials {
-  color: #fff;
-  font-weight: 800;
-  font-size: 0.95rem;
-  text-transform: uppercase;
 }
 
 .user-dropdown-menu {
