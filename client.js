@@ -10221,6 +10221,16 @@ if (typeof AdultMode !== "undefined") {
 // ── Supabase Authentication & Social Logins ──────────────────────────────────
 let supabase = null;
 
+function loadExternalScript(url) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = url;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error(`Failed to load script: ${url}`));
+    document.head.appendChild(script);
+  });
+}
+
 function hasSupabaseSession() {
   try {
     for (let i = 0; i < localStorage.length; i++) {
@@ -10238,6 +10248,9 @@ async function initSupabase() {
     const res = await fetch("/api/config");
     const config = await res.json();
     if (config.ok && config.supabaseUrl && config.supabaseKey) {
+      if (!window.supabase) {
+        await loadExternalScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2");
+      }
       supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
       setupSupabaseAuth();
       
