@@ -10217,7 +10217,10 @@ document.addEventListener("keydown", (event) => {
     openCarouselShow();
   }
 
-  if (event.key === "Escape" || event.key === "Backspace") {
+  // Backspace is the TV/remote "go back" key, but while the user is typing in a
+  // text field (e.g. the login email/password) Backspace must delete a
+  // character instead of closing the overlay. Escape still always closes.
+  if (event.key === "Escape" || (event.key === "Backspace" && !editingText)) {
     const authOverlay = document.getElementById("authOverlay");
     if (authOverlay && !authOverlay.hidden) {
       event.preventDefault();
