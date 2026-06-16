@@ -6388,7 +6388,7 @@ function formatPlayerTime(value = 0) {
     : `${minutes}:${String(rest).padStart(2, "0")}`;
 }
 
-function renderVidstreamTopbar(label = "") {
+function renderVidstreamTopbar(label = "", filterHtml = "") {
   const nav = getEpisodeNavigationTargets();
   return `
     <div class="vid-topbar">
@@ -6396,6 +6396,7 @@ function renderVidstreamTopbar(label = "") {
         data-player-prev ${nav.previous ? "" : "disabled"}
         aria-label="Previous episode" title="Previous episode">⏮</button>
       <strong>${escapeHtml(label || currentEpisodeLabel())}</strong>
+      ${filterHtml}
       <button class="vid-icon-button vid-topbar-nav focusable" type="button"
         data-player-next ${nav.next ? "" : "disabled"}
         aria-label="Next episode" title="Next episode">⏭</button>
@@ -6591,7 +6592,7 @@ function renderSourcePickerIn(frame) {
     if (matchingSources.length > 0) {
       // ── Found: one clickable button per matching source option ──────────
       return matchingSources.map((source) => `
-        <button class="source-picker-option source-picker-option-found focusable" data-player-source="${escapeHtml(source.id)}" type="button">
+        <button class="source-picker-option source-picker-option-found focusable" data-player-source="${escapeHtml(source.id)}" data-source-provider="${escapeHtml(def.label)}" data-source-type="${escapeHtml(source.type || "")}" type="button">
           <span class="source-picker-slot-icon source-picker-slot-play-icon" aria-hidden="true">▶</span>
           <span class="source-picker-slot-body">
             <strong>${escapeHtml(source.label || def.label)}</strong>
@@ -6605,7 +6606,7 @@ function renderSourcePickerIn(frame) {
     if (isPending && status === undefined) {
       // ── Still checking ────────────────────────────────────────────────
       return `
-        <div class="source-picker-option source-picker-option-checking">
+        <div class="source-picker-option source-picker-option-checking" data-source-provider="${escapeHtml(def.label)}" data-source-type="">
           <span class="source-picker-slot-icon source-picker-slot-checking-icon" aria-hidden="true">
             <span class="source-picker-spinner"></span>
           </span>
@@ -6619,7 +6620,7 @@ function renderSourcePickerIn(frame) {
 
     // ── Not available ─────────────────────────────────────────────────
     return `
-      <div class="source-picker-option source-picker-option-unavail">
+      <div class="source-picker-option source-picker-option-unavail" data-source-provider="${escapeHtml(def.label)}" data-source-type="">
         <span class="source-picker-slot-icon source-picker-slot-off-icon" aria-hidden="true">—</span>
         <span class="source-picker-slot-body">
           <strong>${escapeHtml(def.label)}</strong>
@@ -6633,7 +6634,7 @@ function renderSourcePickerIn(frame) {
   const extraCards = allSources
     .filter((s) => !claimedIds.has(s.id))
     .map((source) => `
-      <button class="source-picker-option source-picker-option-found focusable" data-player-source="${escapeHtml(source.id)}" type="button">
+      <button class="source-picker-option source-picker-option-found focusable" data-player-source="${escapeHtml(source.id)}" data-source-provider="${escapeHtml(source.label || "Addons")}" data-source-type="${escapeHtml(source.type || "")}" type="button">
         <span class="source-picker-slot-icon source-picker-slot-play-icon" aria-hidden="true">▶</span>
         <span class="source-picker-slot-body">
           <strong>${escapeHtml(source.label || source.id || "Server")}</strong>
@@ -6644,6 +6645,60 @@ function renderSourcePickerIn(frame) {
     `).join("");
 
   const foundCount = allSources.length;
+
+  // Extract unique providers and connection formats for the dropdown filter
+  const uniqueProviders = new Set();
+  const uniqueTypes = new Set();
+
+  allSources.forEach((s) => {
+    const def = pickerServerDefinitions.find((d) => d.match(s));
+    const provider = def ? def.label : (s.label || "Addons");
+    uniqueProviders.add(provider);
+    if (s.type) {
+      uniqueTypes.add(s.type);
+    }
+  });
+
+  // Include checking servers in unique providers so they don't disappear if someone filters
+  pickerServerDefinitions.forEach((def) => {
+    const status = serverChecks[def.key];
+    if (isPending && status === undefined) {
+      uniqueProviders.add(def.label);
+    }
+  });
+
+  let filterSelectHtml = "";
+  if (foundCount > 0 || isPending) {
+    let optionsHtml = `<option value="all">All</option>`;
+
+    // Add providers group/options
+    if (uniqueProviders.size > 1) {
+      optionsHtml += Array.from(uniqueProviders)
+        .sort()
+        .map((p) => `<option value="provider:${escapeHtml(p)}">${escapeHtml(p)}</option>`)
+        .join("");
+    }
+
+    // Add types group/options
+    if (uniqueTypes.size > 1) {
+      optionsHtml += Array.from(uniqueTypes)
+        .sort()
+        .map((t) => {
+          const label = t === "direct" ? "Direct video" : t === "resolver" ? "Resolver" : "Embedded player";
+          return `<option value="type:${escapeHtml(t)}">${escapeHtml(label)}</option>`;
+        })
+        .join("");
+    }
+
+    // Only render filter dropdown if there's actually more than 1 filterable group/option!
+    if (uniqueProviders.size > 1 || uniqueTypes.size > 1) {
+      filterSelectHtml = `
+        <select class="source-filter-select focusable language-select" aria-label="Filter sources">
+          ${optionsHtml}
+        </select>
+      `;
+    }
+  }
 
   frame.innerHTML = `
     <div class="source-picker-shell vidstream-player is-source-picker">
@@ -6670,7 +6725,7 @@ function renderSourcePickerIn(frame) {
             ${extraCards}
           </div>
         </div>
-        ${renderVidstreamTopbar(currentEpisodeLabel())}
+        ${renderVidstreamTopbar(currentEpisodeLabel(), filterSelectHtml)}
       </div>
       ${renderPlayerEpisodeActions("")}
     </div>
@@ -6680,6 +6735,65 @@ function renderSourcePickerIn(frame) {
   frame.querySelector("[data-player-exit]")?.addEventListener("click", exitPlayerToSources);
   frame.querySelector("[data-player-back]")?.addEventListener("click", () => showEpisodeListTab());
   wirePlayerChrome(frame);
+
+  // Wire up filter select change handling
+  const select = frame.querySelector(".source-filter-select");
+  if (select) {
+    select.addEventListener("change", (e) => {
+      const val = e.target.value;
+      const options = frame.querySelectorAll(".source-picker-option");
+      let visibleCount = 0;
+
+      options.forEach((opt) => {
+        let matches = false;
+        if (val === "all") {
+          matches = true;
+        } else if (val.startsWith("provider:")) {
+          const provider = val.substring("provider:".length);
+          matches = opt.getAttribute("data-source-provider") === provider;
+        } else if (val.startsWith("type:")) {
+          const type = val.substring("type:".length);
+          matches = opt.getAttribute("data-source-type") === type;
+        }
+
+        if (matches) {
+          opt.style.display = "";
+          if (opt.classList.contains("source-picker-option-found")) {
+            opt.classList.add("focusable");
+          }
+          visibleCount++;
+        } else {
+          opt.style.display = "none";
+          opt.classList.remove("focusable");
+          opt.classList.remove("is-tv-focused");
+        }
+      });
+
+      // Update heading text dynamically to reflect filtered count
+      const headingStrong = frame.querySelector(".source-picker-heading strong");
+      if (headingStrong) {
+        if (val === "all") {
+          headingStrong.textContent = foundCount > 0 ? `${foundCount} server${foundCount === 1 ? "" : "s"} found` : isPending ? "Scanning servers…" : "No servers found";
+        } else {
+          headingStrong.textContent = `${visibleCount} match${visibleCount === 1 ? "" : "es"} found`;
+        }
+      }
+
+      // If active element is hidden, focus select or first visible focusable option
+      const active = document.activeElement;
+      if (active && active.classList.contains("source-picker-option") && active.style.display === "none") {
+        const firstVisible = frame.querySelector(".source-picker-option-found.focusable");
+        if (firstVisible) {
+          firstVisible.focus();
+        } else {
+          select.focus();
+        }
+      }
+
+      refreshFocusables();
+    });
+  }
+
   refreshFocusables();
 }
 
