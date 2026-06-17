@@ -10326,7 +10326,12 @@ async function playActiveShow(options = {}) {
       currentEpisodeLabel(),
       "Checking server-side resolver to load in custom player..."
     );
-    const resolved = await attemptResolveEmbed(embedUrl);
+    // Pass the origin site (e.g. jkanime.net) as referer so embed hosts that
+    // whitelist specific referrers allow the server-side fetch to succeed.
+    const embedSiteReferer = source?.siteUrl
+      ? (() => { try { const u = new URL(source.siteUrl); return u.origin + "/"; } catch { return ""; } })()
+      : "";
+    const resolved = await attemptResolveEmbed(embedUrl, embedSiteReferer);
     if (resolved && resolved.url) {
       url = resolved.url;
       source = { ...(source || {}), type: "direct", videoUrl: url, referer: resolved.referer || source?.referer || "" };
@@ -10427,11 +10432,12 @@ function isExternalIframeEpisode(episode) {
   return Boolean(episode?.externalUrl && (episode.externalType || "iframe") === "iframe");
 }
 
-async function attemptResolveEmbed(embedUrl) {
+async function attemptResolveEmbed(embedUrl, siteReferer = "") {
   if (!embedUrl) return null;
   try {
     const api = new URL("./api/resolve", location.href);
     api.searchParams.set("url", embedUrl);
+    if (siteReferer) api.searchParams.set("referer", siteReferer);
     const response = await fetchWithTimeout(api.toString(), {}, 7000);
     if (!response.ok) return null;
     const payload = await response.json();
@@ -11839,6 +11845,22 @@ document.addEventListener("keydown", (event) => {
     }
     if (!overlay.hidden) {
       event.preventDefault();
+      const frame = document.querySelector("#videoFrame");
+      const epList = document.querySelector("#episodeList");
+      // Source picker open in the video frame → exit to episode list
+      if (frame?.querySelector(".source-picker")) {
+        exitPlayerToSources();
+        return;
+      }
+      // Side source picker open in the episode panel → go back to episode list
+      if (epList?.querySelector(".side-source-picker")) {
+        hideAdultGalleryPanel?.();
+        if (state.activeShow) renderEpisodeList(state.activeShow);
+        else showEpisodeListTab();
+        refreshFocusables();
+        return;
+      }
+      // Default: close the whole overlay
       closeShow();
     }
   }

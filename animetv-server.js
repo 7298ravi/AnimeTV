@@ -5601,7 +5601,7 @@ const JK_HEADERS = {
   Referer: `${JK_BASE}/`
 };
 // Streamable embed hosts ranked first; pure download lockers are dropped.
-const JK_GOOD_HOSTS = ["streamwish", "sfastwish", "filemoon", "voe", "vidhide", "mp4upload", "streamtape", "doodstream", "dood", "okru", "ok.ru", "yourupload", "mega"];
+const JK_GOOD_HOSTS = ["streamwish", "sfastwish", "filemoon", "voe", "vidhide", "mp4upload", "streamtape", "doodstream", "dood", "mixdrop", "okru", "ok.ru", "yourupload", "mega"];
 
 async function mapLimit(items, limit, fn) {
   const out = [];
@@ -5630,6 +5630,9 @@ function parseJkanimeServers(html) {
     let url = "";
     try { url = Buffer.from(String(s.remote || ""), "base64").toString("utf8").trim(); } catch { /* ignore */ }
     url = url.replace(/\s+/g, "");
+    // Normalise protocol-relative (//host/...) and JKAnime-relative (/path) URLs
+    if (url.startsWith("//")) url = "https:" + url;
+    else if (url.startsWith("/")) url = `${JK_BASE}${url}`;
     if (!/^https?:\/\//i.test(url)) continue;
     out.push({ server: String(s.server || "").trim(), url });
   }
@@ -6441,6 +6444,7 @@ function extractStreamFromEmbed(html) {
 }
 async function handleResolveEmbed(reqUrl, response) {
   const target = reqUrl.searchParams.get("url");
+  const customReferer = reqUrl.searchParams.get("referer") || "";
   if (!target || !/^https?:\/\//i.test(target)) {
     sendJson(response, { ok: false, error: "Missing embed url." }, 400);
     return;
@@ -6452,8 +6456,14 @@ async function handleResolveEmbed(reqUrl, response) {
   }
   try {
     const host = (target.match(/^https?:\/\/([^/]+)/) || [])[1] || "";
+    // Use the caller-supplied referer (e.g. jkanime.net for JKAnime embeds) so
+    // embed hosts that check the Referer against their whitelist allow the fetch.
+    // Fall back to the embed host itself only when no origin is specified.
+    const referer = customReferer && /^https?:\/\//i.test(customReferer)
+      ? customReferer
+      : `https://${host}/`;
     const r = await fetchWithTimeout(target, {
-      headers: { ...GENERIC_CRAWL_HEADERS, Referer: `https://${host}/` }
+      headers: { ...GENERIC_CRAWL_HEADERS, Referer: referer }
     }, HOSTED_RUNTIME ? 8000 : 12000);
     if (!r.ok) throw new Error(`embed HTTP ${r.status}`);
     const html = await r.text();
@@ -6463,7 +6473,7 @@ async function handleResolveEmbed(reqUrl, response) {
       ok: true,
       url: stream.url,
       type: stream.type,
-      referer: `https://${host}/`
+      referer
     }, 200, { "Cache-Control": "public, max-age=120" });
   } catch (error) {
     sendJson(response, { ok: false, error: `Resolve failed: ${error.message}` }, 502);
