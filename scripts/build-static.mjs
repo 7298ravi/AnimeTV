@@ -14,9 +14,13 @@ const files = [
   "logo-mark-192.png",
   "logo-mark-512.png",
   "logo-mark-transparent.png",
+  "logo-mark-128.webp",
   "logo-wordmark.png",
+  "logo-wordmark-480.webp",
   "logo-round.png",
   "logo-round-192.png",
+  "logo-round-192.webp",
+  "hero-backdrop-placeholder.webp",
   "favicon-32.png",
   "service-worker.js"
 ];

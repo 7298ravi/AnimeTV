@@ -187,9 +187,26 @@ const types = {
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".ico": "image/x-icon",
   ".json": "application/json; charset=utf-8",
   ".webmanifest": "application/manifest+json"
 };
+const IMAGE_PROXY_ALLOWED_HOSTS = new Set([
+  "s4.anilist.co",
+  "s4.anilistcdn.com",
+  "s4.anilist.co",
+  "cdn.myanimelist.net",
+  "cdn.animeav1.com",
+  "image.tmdb.org",
+  "media.themoviedb.org",
+  "www.themoviedb.org"
+]);
+const IMAGE_PROXY_MAX_BYTES = 5 * 1024 * 1024;
 const STRICT_TRANSPORT_SECURITY = "max-age=31536000; includeSubDomains; preload";
 const SECURITY_HEADERS = {
   "Referrer-Policy": "no-referrer",
@@ -406,6 +423,14 @@ function handleRequest(request, response) {
 
     if (url.pathname === "/api/server-info") {
       handleServerInfo(request, response);
+      return;
+    }
+
+    if (url.pathname === "/api/image") {
+      handleImageProxy(url, response).catch((error) => {
+        log("warn", `Image proxy failed: ${error.message}`);
+        if (!response.headersSent) sendJson(response, { ok: false, error: "Image unavailable" }, 502);
+      });
       return;
     }
 
@@ -909,6 +934,64 @@ function handleHealth(response) {
       heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024)
     }
   });
+}
+
+async function handleImageProxy(url, response) {
+  const raw = String(url.searchParams.get("src") || "").trim();
+  if (!raw) {
+    sendJson(response, { ok: false, error: "Missing image URL" }, 400);
+    return;
+  }
+
+  let source;
+  try {
+    source = new URL(raw);
+  } catch {
+    sendJson(response, { ok: false, error: "Invalid image URL" }, 400);
+    return;
+  }
+
+  if (!/^https?:$/.test(source.protocol) || !IMAGE_PROXY_ALLOWED_HOSTS.has(source.hostname.toLowerCase())) {
+    sendJson(response, { ok: false, error: "Image host is not allowed" }, 403);
+    return;
+  }
+
+  const upstream = await fetchWithTimeout(source.toString(), {
+    headers: {
+      Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
+    }
+  }, 10000);
+  if (!upstream.ok) {
+    sendJson(response, { ok: false, error: `Image upstream returned HTTP ${upstream.status}` }, upstream.status);
+    return;
+  }
+
+  const contentType = String(upstream.headers.get("content-type") || "image/jpeg").split(";")[0].toLowerCase();
+  if (!contentType.startsWith("image/")) {
+    sendJson(response, { ok: false, error: "Upstream response is not an image" }, 415);
+    return;
+  }
+
+  const length = Number(upstream.headers.get("content-length") || 0);
+  if (length && length > IMAGE_PROXY_MAX_BYTES) {
+    sendJson(response, { ok: false, error: "Image is too large" }, 413);
+    return;
+  }
+
+  const buffer = Buffer.from(await upstream.arrayBuffer());
+  if (buffer.length > IMAGE_PROXY_MAX_BYTES) {
+    sendJson(response, { ok: false, error: "Image is too large" }, 413);
+    return;
+  }
+
+  response.writeHead(200, {
+    ...SECURITY_HEADERS,
+    "Content-Type": contentType,
+    "Cache-Control": "public, max-age=86400, s-maxage=604800, stale-while-revalidate=2592000",
+    "Content-Length": String(buffer.length)
+  });
+  response.end(buffer);
 }
 
 function handleServerInfo(request, response) {

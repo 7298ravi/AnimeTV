@@ -6038,9 +6038,13 @@ body.player-cinema-open .close-button {
   transform: none;
 }
 
-.carousel-backdrop {
+.carousel-backdrop,
+.carousel-backdrop-image {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   background: linear-gradient(135deg, #58a8ff, #ef5bb8 52%, #f2bb46);
   background-position: center center;
   background-size: cover;
@@ -6051,7 +6055,13 @@ body.player-cinema-open .close-button {
   transition: opacity 280ms ease, transform 420ms ease, filter 420ms ease;
 }
 
-.carousel-backdrop.has-banner {
+.carousel-backdrop-image {
+  display: block;
+  color: transparent;
+}
+
+.carousel-backdrop.has-banner,
+.carousel-backdrop-image.has-banner {
   background-position: center center;
   background-size: cover;
   image-rendering: auto;

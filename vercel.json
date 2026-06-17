@@ -27,9 +27,9 @@
       ]
     },
     {
-      "source": "/api/(.*)",
+      "source": "/api/image",
       "headers": [
-        { "key": "Cache-Control", "value": "no-store, max-age=0" }
+        { "key": "Cache-Control", "value": "public, max-age=86400, s-maxage=604800, stale-while-revalidate=2592000" }
       ]
     },
     {
@@ -48,6 +48,12 @@
       "source": "/api/(animeav1|tioanime|jkanime|animeonlineninja)/slugs",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400" }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, max-age=0" }
       ]
     },
     {

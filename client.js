@@ -253,6 +253,7 @@ const castButton = document.querySelector("#castButton");
 const episodeList = document.querySelector("#episodeList");
 const sections = document.querySelectorAll("[data-section]");
 const carouselBackdrop = document.querySelector("#carouselBackdrop");
+const carouselBackdropImage = document.querySelector("#carouselBackdropImage");
 const carouselTitle = document.querySelector("#carouselTitle");
 const carouselText = document.querySelector("#carouselText");
 const carouselMeta = document.querySelector("#carouselMeta");
@@ -305,9 +306,9 @@ function toggleSidebar() {
   // leave both is-collapsing AND is-expanding on the body at once, which runs
   // conflicting animations and makes the toggle look broken after a few uses.
   document.body.classList.remove("is-toggling", "is-collapsing", "is-expanding");
-  // force reflow so re-adding the class restarts the animation even on rapid clicks
-  void document.body.offsetWidth;
-  document.body.classList.add("is-toggling", state.sidebarCollapsed ? "is-collapsing" : "is-expanding");
+  requestAnimationFrame(() => {
+    document.body.classList.add("is-toggling", state.sidebarCollapsed ? "is-collapsing" : "is-expanding");
+  });
   clearTimeout(_sidebarToggleTimer);
   _sidebarToggleTimer = window.setTimeout(() => {
     document.body.classList.remove("is-toggling", "is-collapsing", "is-expanding");
@@ -2039,6 +2040,30 @@ function hqImage(url) {
   return u;
 }
 
+function imageDeliveryUrl(url, width = 480) {
+  const raw = String(url || "").trim();
+  if (!raw || raw.startsWith("data:") || raw.startsWith("blob:") || raw.startsWith("./") || raw.startsWith("/")) return raw;
+  if (!/^https?:$/i.test(location.protocol)) return raw;
+  try {
+    const parsed = new URL(raw, location.href);
+    if (parsed.origin === location.origin) return raw;
+    const host = parsed.hostname.toLowerCase();
+    const allowed = host === "cdn.myanimelist.net" ||
+      host === "s4.anilist.co" ||
+      host === "s4.anilistcdn.com" ||
+      host === "cdn.animeav1.com" ||
+      host === "image.tmdb.org" ||
+      host === "media.themoviedb.org";
+    if (!allowed) return raw;
+    const proxy = new URL("./api/image", location.href);
+    proxy.searchParams.set("src", parsed.toString());
+    if (width) proxy.searchParams.set("w", String(width));
+    return proxy.pathname + proxy.search;
+  } catch {
+    return raw;
+  }
+}
+
 function getCarouselArtwork(show = {}) {
   const poster = String(show.image || show.poster || show.cover || "").trim();
   const candidates = [
@@ -2224,6 +2249,11 @@ function renderCarousel() {
     carouselStage.classList.add("is-loading");
     carouselBackdrop.classList.remove("has-banner");
     carouselBackdrop.style.backgroundImage = "linear-gradient(135deg, #121733 0%, #1b1a3b 38%, #0b2637 100%)";
+    if (carouselBackdropImage) {
+      carouselBackdropImage.src = "hero-backdrop-placeholder.webp?v=336";
+      carouselBackdropImage.removeAttribute("srcset");
+      carouselBackdropImage.classList.remove("has-banner");
+    }
     carouselTitle.textContent = "Loading ZenkaiTV...";
     carouselText.textContent = "Getting the catalog ready.";
     carouselMeta.textContent = "Please wait";
@@ -2246,14 +2276,24 @@ function renderCarousel() {
   _carouselPaintedId = String(show.id || "");
 
   const art = carouselArtworkOrPoster(show);
+  const deliveredArt = imageDeliveryUrl(art, 1280);
   carouselBackdrop.classList.toggle("has-banner", Boolean(art));
   carouselBackdrop.style.backgroundImage = art
-    ? `url("${art}")`
+    ? `url("${deliveredArt}")`
     : "linear-gradient(135deg, #121733 0%, #1b1a3b 38%, #0b2637 100%)";
+  if (carouselBackdropImage) {
+    carouselBackdropImage.classList.toggle("has-banner", Boolean(art));
+    if (art && carouselBackdropImage.getAttribute("src") !== deliveredArt) {
+      carouselBackdropImage.src = deliveredArt;
+    } else if (!art) {
+      carouselBackdropImage.src = "hero-backdrop-placeholder.webp?v=336";
+      carouselBackdropImage.removeAttribute("srcset");
+    }
+  }
   if (art) {
     let lcp = document.getElementById("lcpPreload");
     if (!lcp) { lcp = document.createElement("link"); lcp.id = "lcpPreload"; lcp.rel = "preload"; lcp.as = "image"; lcp.fetchPriority = "high"; document.head.appendChild(lcp); }
-    lcp.href = art;
+    lcp.href = deliveredArt;
     lcp.setAttribute("imagesizes", "100vw");
   }
   carouselTitle.textContent = getShowTitle(show);
@@ -2270,7 +2310,7 @@ function renderCarouselIndicators(items) {
   if (!carouselIndicators) return;
   carouselIndicators.innerHTML = items.slice(0, 8).map((show, index) => `
     <button class="carousel-dot focusable ${index === state.carouselIndex ? "is-selected" : ""}" data-carousel-index="${index}" aria-label="Show ${escapeHtml(getShowTitle(show))}">
-      ${carouselArtworkOrPoster(show) ? `<img referrerpolicy="no-referrer" src="${carouselArtworkOrPoster(show)}" alt="" width="96" height="54" loading="lazy" decoding="async">` : "<span></span>"}
+      ${carouselArtworkOrPoster(show) ? `<img referrerpolicy="no-referrer" src="${escapeHtml(imageDeliveryUrl(carouselArtworkOrPoster(show), 192))}" alt="" width="96" height="54" loading="lazy" decoding="async">` : "<span></span>"}
     </button>
   `).join("");
 
@@ -2777,9 +2817,10 @@ function cardTemplate(show, index = 0) {
   const meta = cardMeta(show, isFavorite);
   const target = getCardTarget(show);
   const posterCandidates = getCardPosterCandidates(show);
-  const posterUrl = posterCandidates[0] || "";
-  const fallbackData = posterCandidates.length
-    ? ` data-image-fallbacks="${escapeHtml(encodeURIComponent(JSON.stringify(posterCandidates)))}" data-image-fallback-index="0"`
+  const deliveredCandidates = posterCandidates.map((url) => imageDeliveryUrl(url, 360));
+  const posterUrl = deliveredCandidates[0] || "";
+  const fallbackData = deliveredCandidates.length
+    ? ` data-image-fallbacks="${escapeHtml(encodeURIComponent(JSON.stringify(deliveredCandidates)))}" data-image-fallback-index="0"`
     : "";
   const image = posterUrl
     ? `
@@ -2950,7 +2991,7 @@ function renderSchedule() {
                   const schedImg = show.image || show.images?.poster || show.images?.cover ||
                     show.coverImageLarge || show.cover || show.poster || show.thumbnail || "";
                   return schedImg
-                    ? `<img referrerpolicy="no-referrer" src="${escapeHtml(schedImg)}" alt="" width="160" height="90" loading="lazy" decoding="async">`
+                    ? `<img referrerpolicy="no-referrer" src="${escapeHtml(imageDeliveryUrl(schedImg, 240))}" alt="" width="160" height="90" loading="lazy" decoding="async">`
                     : "";
                 })()}
                 <span>${cardEpisodeLabel(show)}</span>
@@ -11746,8 +11787,7 @@ fullscreenToggle?.addEventListener("click", toggleNativeFullscreen);
       fullscreenToggle.dataset.tip = active ? "Exit fullscreen" : "Fullscreen";
       // Replay the pulse animation on each toggle.
       fullscreenToggle.classList.remove("fs-pulse");
-      void fullscreenToggle.offsetWidth; // reflow so the animation restarts
-      fullscreenToggle.classList.add("fs-pulse");
+      requestAnimationFrame(() => fullscreenToggle.classList.add("fs-pulse"));
       window.setTimeout(() => fullscreenToggle.classList.remove("fs-pulse"), 480);
     }
   })
@@ -12511,7 +12551,7 @@ if (typeof window !== "undefined") {
 function startUpdateManagerWhenIdle() {
   const start = async () => {
     try {
-      if (!window.UpdateManager) await loadExternalScript("update-manager.js?v=335");
+      if (!window.UpdateManager) await loadExternalScript("update-manager.js?v=336");
       if (window.UpdateManager && !window.animeTVUpdater) {
         window.animeTVUpdater = new window.UpdateManager({ currentVersion: "1.3.0" });
         window.animeTVUpdater.start();
