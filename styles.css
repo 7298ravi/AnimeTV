@@ -2717,39 +2717,39 @@ body.reduce-motion *::after {
   transition-duration: 0.001ms !important;
 }
 
-body.soft-focus .focusable:focus,
+body.soft-focus .focusable:focus-visible,
 body.soft-focus .is-tv-focused {
   box-shadow: none;
 }
 
-.focusable:focus,
+.focusable:focus-visible,
 .is-tv-focused {
   outline: 0.14rem solid rgba(255, 255, 255, 0.82);
   outline-offset: 0.18rem;
   box-shadow: 0 0 0 0.28rem rgba(0, 210, 255, 0.13);
 }
 
-.primary-action.focusable:focus,
-.secondary-action.focusable:focus,
-.play-action.focusable:focus,
-.episode-play-inline.focusable:focus,
-.episode-button.focusable:focus,
-.detail-tab.focusable:focus,
-.season-tab.focusable:focus,
-.season-card.focusable:focus {
+.primary-action.focusable:focus-visible,
+.secondary-action.focusable:focus-visible,
+.play-action.focusable:focus-visible,
+.episode-play-inline.focusable:focus-visible,
+.episode-button.focusable:focus-visible,
+.detail-tab.focusable:focus-visible,
+.season-tab.focusable:focus-visible,
+.season-card.focusable:focus-visible {
   outline: 0;
 }
 
-.primary-action.focusable:focus,
-.secondary-action.focusable:focus,
-.episode-play-inline.focusable:focus {
+.primary-action.focusable:focus-visible,
+.secondary-action.focusable:focus-visible,
+.episode-play-inline.focusable:focus-visible {
   box-shadow:
     inset 0 0 0 0.08rem rgba(255, 255, 255, 0.12),
     0 0 0 0.18rem rgba(0, 210, 255, 0.08),
     0 0.5rem 1.1rem rgba(0, 0, 0, 0.22);
 }
 
-.play-action.focusable:focus {
+.play-action.focusable:focus-visible {
   box-shadow:
     inset 0 0 0 0.08rem rgba(255, 255, 255, 0.1),
     0 0 0 0.2rem rgba(0, 210, 255, 0.08),

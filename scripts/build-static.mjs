@@ -39,7 +39,11 @@ async function minifyJsFile(filePath) {
   try {
     const code = readFileSync(filePath, "utf8");
     const result = await terserMinify(code, {
-      compress: { passes: 2 },
+      compress: {
+        passes: 3,
+        pure_funcs: ["console.log", "console.debug", "console.info"],
+        drop_debugger: true
+      },
       mangle: true,
       format: { comments: false }
     });

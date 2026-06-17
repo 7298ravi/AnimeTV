@@ -6411,7 +6411,7 @@ function renderEpisodeList(show) {
               : rawLabel;
             return `
             <button class="season-card focusable ${selected ? "is-selected" : ""}" data-season-card="${i}">
-              ${seasonPosterUrl ? `<img referrerpolicy="no-referrer" class="season-card-img" src="${escapeHtml(seasonPosterUrl)}" alt="" loading="eager" fetchpriority="high" decoding="async"${seasonFallbackData}>` : ""}
+              ${seasonPosterUrl ? `<img referrerpolicy="no-referrer" class="season-card-img" src="${escapeHtml(seasonPosterUrl)}" alt="" loading="lazy" decoding="async"${seasonFallbackData}>` : ""}
               <strong>${escapeHtml(cardLabel)}</strong>
               <small>${escapeHtml(season.sourceTitle || getSeasonDisplayTitle(show, season))}</small>
               <span>${epLabel}${badge}${yr}</span>
