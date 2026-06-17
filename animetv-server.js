@@ -191,8 +191,7 @@ const SECURITY_HEADERS = {
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    "frame-ancestors 'self'",
-    "navigate-to 'self'"
+    "frame-ancestors 'self'"
   ].join("; "),
   ...(HOSTED_RUNTIME ? { "Strict-Transport-Security": STRICT_TRANSPORT_SECURITY } : {})
 };
@@ -774,10 +773,18 @@ function handleRequest(request, response) {
       return;
     }
 
+    // Versioned assets (?v=NNN) are content-addressed — safe to cache for 1 year.
+    // index.html is never versioned and must always be fresh.
+    const isVersioned = url.searchParams.has("v") || /[?&]v=\d+/.test(url.search);
+    const isHtml = path.extname(filePath) === ".html" || pathname === "/index.html";
+    const cacheControl = (!isHtml && isVersioned)
+      ? "public, max-age=31536000, immutable"
+      : "no-store, max-age=0";
+
     response.writeHead(200, {
       ...SECURITY_HEADERS,
       "Content-Type": types[path.extname(filePath)] || "application/octet-stream",
-      "Cache-Control": "no-store, max-age=0"
+      "Cache-Control": cacheControl
     });
     response.end(data);
   });

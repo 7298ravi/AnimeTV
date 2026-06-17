@@ -9137,6 +9137,7 @@ body.is-tv .topbar-auth {
 
 .side-source-picker-list {
   flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0 !important;
@@ -9148,9 +9149,148 @@ body.is-tv .topbar-auth {
 }
 .side-source-picker-list::-webkit-scrollbar { display: none; }
 
-/* Compact padding in the narrow panel */
+/* Compact grid in the narrow panel: narrow provider column, rest to details */
 .side-source-picker-list .source-picker-option {
-  padding: 0.7rem 0.5rem !important;
-  grid-template-columns: 6.5rem 1fr !important;
-  gap: 0.8rem !important;
+  grid-template-columns: 4.5rem 1fr !important;
+  padding: 0.65rem 0.6rem !important;
+  gap: 0.55rem !important;
 }
+.side-source-picker-list .source-filename {
+  font-size: 0.8rem;
+}
+.side-source-picker-list .source-meta {
+  gap: 0.5rem;
+}
+
+/* ── Side-source-picker content body (topbar above; gallery + list side-by-side) */
+.side-source-picker-body {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Adult episode screenshot gallery (vertical left column) ─────────────── */
+.ep-gallery {
+  flex: 0 0 6rem;
+  width: 6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.55rem 0.42rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.16) transparent;
+  scroll-snap-type: y mandatory;
+  border-right: 0.06rem solid rgba(255,255,255,0.09);
+  background: rgba(0,0,0,0.3);
+}
+.ep-gallery::-webkit-scrollbar { width: 0.2rem; }
+.ep-gallery::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 9rem; }
+
+.ep-gallery-thumb {
+  flex: 0 0 auto;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 0.38rem;
+  overflow: hidden;
+  scroll-snap-align: start;
+  cursor: pointer;
+  border: 0.1rem solid rgba(255,255,255,0.09);
+  transition: border-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+  background: rgba(255,255,255,0.05);
+}
+.ep-gallery-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+  transition: transform 200ms ease;
+}
+.ep-gallery-thumb:is(:hover, :focus-visible) {
+  border-color: rgba(225,29,72,0.7);
+  box-shadow: 0 0 0 0.14rem rgba(225,29,72,0.28);
+  outline: none;
+}
+.ep-gallery-thumb:is(:hover, :focus-visible) img {
+  transform: scale(1.06);
+}
+.ep-gallery-thumb.is-active {
+  border-color: #e11d48;
+  box-shadow: 0 0 0 0.15rem rgba(225,29,72,0.45);
+}
+
+/* Lightbox overlay for full-size view */
+.ep-gallery-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fade-in 160ms ease both;
+  cursor: zoom-out;
+}
+.ep-gallery-lightbox img {
+  max-width: min(90vw, 70rem);
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 0.6rem;
+  box-shadow: 0 2rem 6rem rgba(0,0,0,0.8);
+  pointer-events: none;
+}
+.ep-gallery-lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255,255,255,0.12);
+  border: 0.08rem solid rgba(255,255,255,0.22);
+  color: #fff;
+  border-radius: 50%;
+  width: 2.8rem;
+  height: 2.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.3rem;
+  transition: background 150ms;
+}
+.ep-gallery-lightbox-nav:hover { background: rgba(255,255,255,0.25); }
+.ep-gallery-lightbox-nav.prev { left: 1.2rem; }
+.ep-gallery-lightbox-nav.next { right: 1.2rem; }
+.ep-gallery-lightbox-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: rgba(255,255,255,0.12);
+  border: 0.08rem solid rgba(255,255,255,0.22);
+  color: #fff;
+  border-radius: 50%;
+  width: 2.4rem;
+  height: 2.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.1rem;
+  transition: background 150ms;
+}
+.ep-gallery-lightbox-close:hover { background: rgba(225,29,72,0.4); }
+.ep-gallery-counter {
+  position: absolute;
+  bottom: 1.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.6);
+  color: rgba(255,255,255,0.75);
+  font-size: 0.78rem;
+  padding: 0.2rem 0.7rem;
+  border-radius: 9rem;
+  pointer-events: none;
+}
+
