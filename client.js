@@ -2186,13 +2186,13 @@ function getWatchBackdropArtwork(show = {}, season = null) {
     show.banner,
     show.bannerImage,
     season?.tmdbBackdrop,
-    show.tmdbSeasonPoster,
     show.backdrop,
     show.heroImage,
     show.wideImage,
     show.landscapeImage,
     show.jikanBackground,
     show.coverImageLarge,
+    show.tmdbSeasonPoster,
     season?.highQualityBackground,
     season?.banner,
     season?.backdrop,
@@ -5468,7 +5468,8 @@ async function hydrateOpenShowDetails(show, target = {}, openToken = "") {
       await hydrateAdultShowDetails(show);
       if (state.activeOpenToken !== openToken || state.activeShow?.id !== show.id) return;
       if (!state.activeEpisode) applyOpenTarget(show, target);
-      renderEpisodeList(show);
+      // Don't rebuild the episode list out from under an open source picker.
+      if (!episodeList?.querySelector(".side-source-picker")) renderEpisodeList(show);
       syncWatchHeading(show);
       const descriptionNode = document.querySelector("#watchDescription");
       if (descriptionNode) descriptionNode.textContent = show.description || "";
@@ -5530,7 +5531,11 @@ async function hydrateOpenShowDetails(show, target = {}, openToken = "") {
       await attachPlaybackSourceOptions(show, state.activeEpisode.episode, state.activeEpisode?.season?.season || state.activeSeasonIndex + 1 || 1);
       if (state.activeOpenToken !== openToken || state.activeShow?.id !== show.id) return;
     }
-    renderEpisodeList(show);
+    // Background hydration finished. If the user already opened the source picker
+    // (Play / episode click), DON'T rebuild the episode list — it lives inside
+    // #episodeList and rebuilding would close the picker mid-load and bounce them
+    // back to the episode list. The picker refreshes itself as new sources land.
+    if (!episodeList?.querySelector(".side-source-picker")) renderEpisodeList(show);
     syncWatchHeading(show);
     const descriptionNode = document.querySelector("#watchDescription");
     if (descriptionNode) descriptionNode.textContent = show.description;
@@ -6543,6 +6548,11 @@ function renderEpisodeList(show) {
   if (!isAdultSourceShow && (show.anilistId || show.malId) && !show._extrasTried && !show.streamingEpisodes) {
     show._extrasTried = true;
     fetchAniListShowExtras(show).then(() => {
+      // Don't rebuild while the in-panel source picker is open (user pressed Play
+      // / picked an episode) — the picker lives inside #episodeList, so a
+      // background re-render here would yank it closed mid-load and bounce the
+      // user back to the episode list.
+      if (episodeList?.querySelector(".side-source-picker")) return;
       if (state.activeShow?.id === show.id && (show.streamingEpisodes || show.banner)) renderEpisodeList(show);
     }).catch(() => {});
   }
