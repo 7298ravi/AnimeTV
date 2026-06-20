@@ -255,6 +255,14 @@ const ImageResolver = (function () {
       const tybwSeason = real.find((s) => s.name.toLowerCase().includes("thousand-year blood war"));
       if (tybwSeason) return { season: tybwSeason, reason: "Bleach Thousand-Year Blood War mapping" };
     }
+    // Ascendance of a Bookworm Part 3 (Honzuki no Gekokujou: Ryoushu no Youjo) is
+    // TMDB Season 2 "Adopted Daughter of an Archduke". Its title also contains the
+    // S1 name ("Ascendance of a Bookworm"), which would otherwise win the generic
+    // name match below — so map it explicitly to the S2 stills.
+    if (lowerTitle.includes("ryoushu no youjo") || lowerTitle.includes("adopted daughter of an archduke")) {
+      const s = real.find((x) => x.name.toLowerCase().includes("adopted daughter of an archduke"));
+      if (s) return { season: s, reason: "Honzuki Ryoushu no Youjo mapping" };
+    }
 
     const animeTitles = [
       anime.title?.english, anime.title?.romaji, anime.title?.native,
@@ -384,6 +392,18 @@ const ImageResolver = (function () {
     // pin to the same TMDB show (#30984) that already carries seasons 1-16 plus TYBW.
     // Multi-season stills logic then maps global episode numbers across all TMDB seasons.
     { tmdb: 30984, names: ["Bleach"] },
+    // Honzuki no Gekokujou Part 3 (Ryoushu no Youjo) — TMDB stores it as Season 2
+    // "Adopted Daughter of an Archduke" under the main Ascendance of a Bookworm
+    // entry (#91768). The 2026 sequel year is far from the 2019 base, so the fuzzy
+    // match was rejected and every episode showed "Preview pending". Pin it; the
+    // pickTmdbSeason special-case maps it to the 2026 Season 2 stills.
+    { tmdb: 91768, names: [
+      "Honzuki no Gekokujou: Ryoushu no Youjo",
+      "Honzuki no Gekokujou Ryoushu no Youjo",
+      "Honzuki no Gekokujou: Shisho ni Naru Tame ni wa Shudan wo Erandeiraremasen - Ryoushu no Youjo",
+      "Ascendance of a Bookworm: Adopted Daughter of an Archduke",
+      "Ascendance of a Bookworm Part 3"
+    ] },
     // NARUTO: Shippuuden — TMDB #31910 "Naruto Shippūden" (2007, 20 seasons, 500 eps).
     // Without a pin the fuzzy search sometimes attaches the wrong Naruto entry.
     // (Was wrongly pinned to #46261, which is "Fairy Tail" (2009) — that forced

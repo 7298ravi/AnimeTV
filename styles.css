@@ -1645,6 +1645,44 @@ body:not([data-route="home"]) .section-heading h2 {
   transition: opacity 220ms ease, transform 320ms ease;
 }
 
+/* ── Image loading: brand-gradient sheen sweep + fade-in ──────────────────────
+   Posters (.thumb-art) and episode thumbnails (.ep-thumb) FADE IN when their
+   image loads instead of popping; while loading, a soft purple→cyan sheen sweeps
+   the placeholder. The sweep is a GPU transform (same `skeleton-sheen` keyframe
+   used during catalog load) so it adds no repaint/TBT cost, and it stops the
+   instant the image is ready. `img-ready` is added by a delegated load listener
+   in client.js; prefers-reduced-motion users get the static placeholder (the
+   global `body.reduce-motion` rule already disables the animation). */
+.art-sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(100deg,
+    transparent 28%,
+    rgba(138, 92, 255, 0.16) 46%,
+    rgba(0, 210, 255, 0.22) 54%,
+    transparent 72%);
+  transform: translateX(-100%);
+  animation: skeleton-sheen 1300ms ease-in-out infinite;
+  will-change: transform;
+  transition: opacity 0.3s ease;
+}
+.thumb-art.img-ready .art-sheen,
+.ep-thumb.img-ready .art-sheen {
+  opacity: 0;
+  animation: none;
+}
+.thumb-poster,
+.ep-thumb-img {
+  opacity: 0;
+  transition: opacity 0.45s ease;
+}
+.thumb-poster.img-ready,
+.ep-thumb-img.img-ready {
+  opacity: 1;
+}
+
 .thumb-art::after {
   transition: opacity 220ms ease;
 }

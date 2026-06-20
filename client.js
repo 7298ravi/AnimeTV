@@ -2593,6 +2593,20 @@ document.addEventListener("error", (event) => {
   }
 }, true);
 
+// Fade posters / episode thumbnails in once their image actually loads (paired
+// with the .art-sheen loading sweep in styles.css) so they appear smoothly
+// instead of popping. Delegated + capture because `load` doesn't bubble —
+// mirrors the error handler above. Tagging the host element stops its sheen.
+document.addEventListener("load", (event) => {
+  const img = event.target;
+  if (!(img instanceof HTMLImageElement)) return;
+  if (img.classList.contains("thumb-poster") || img.classList.contains("ep-thumb-img")) {
+    img.classList.add("img-ready");
+    const host = img.closest(".thumb-art, .ep-thumb");
+    if (host) host.classList.add("img-ready");
+  }
+}, true);
+
 function moveCarousel(step) {
   state.carouselIndex += step;
   carouselStage.classList.remove("is-changing", "is-prev", "is-next");
@@ -3198,6 +3212,7 @@ function cardTemplate(show, index = 0) {
     : `loading="lazy" fetchpriority="low"`;
   const image = posterUrl
     ? `
+        <span class="art-sheen" aria-hidden="true"></span>
         <img referrerpolicy="no-referrer" class="thumb-poster" src="${escapeHtml(posterUrl)}" alt="" width="240" height="360" ${loadingAttrs} decoding="async"${srcsetAttr}${fallbackData}>
       `
     : "";
@@ -6961,7 +6976,7 @@ function renderEpisodeList(show) {
                   data-season-index="${state.activeSeasonIndex}" data-episode-index="${episodeIndex}"
                   data-ep-search="${escapeHtml(search)}">
             <span class="ep-thumb ${finalEpImgSrc ? "has-image" : "is-placeholder"}${isFallback ? " is-fallback" : ""}" style="--episode-hue:${fallbackHue}">
-              ${finalEpImgSrc ? `<img referrerpolicy="no-referrer" class="ep-thumb-img" src="${escapeHtml(finalEpImgSrc)}" alt="" loading="lazy" decoding="async"${epFallbackData}>` : ""}
+              ${finalEpImgSrc ? `<span class="art-sheen" aria-hidden="true"></span><img referrerpolicy="no-referrer" class="ep-thumb-img" src="${escapeHtml(finalEpImgSrc)}" alt="" loading="lazy" decoding="async"${epFallbackData}>` : ""}
               ${finalEpImgSrc ? "" : `<span class="ep-thumb-empty" aria-hidden="true"><span class="ep-thumb-empty-mark">Z</span><span class="ep-thumb-empty-copy">Preview pending</span></span>`}
               <span class="ep-thumb-num">${escapeHtml(String(num))}</span>
               <span class="ep-thumb-play" aria-hidden="true">▶</span>
