@@ -7335,14 +7335,12 @@ function episodeAvailabilityText(episode = {}) {
 
 const PRIMARY_SOURCE_FILTERS = [
   {
-    value: "preferred:animeav1-hls",
-    label: "AnimeAV1 HLS",
-    match: (source) => isAnimeAv1Source(source) && isHlsSource(source)
-  },
-  {
-    value: "preferred:jkanime-mp4upload",
-    label: "JKAnime Mp4upload",
-    match: (source) => isJKAnimeSource(source) && isMp4UploadSource(source)
+    value: "preferred:best-servers",
+    label: "Best servers",
+    match: (source) => (
+      (isAnimeAv1Source(source) && isHlsSource(source)) ||
+      (isJKAnimeSource(source) && isMp4UploadSource(source))
+    )
   }
 ];
 
