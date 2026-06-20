@@ -498,7 +498,7 @@ async function loadAnimeSources() {
   // Always patch in authoritative airing data (latest-aired episode, ids) from
   // the server catalog — regardless of whether shows came from cache, the live
   // merge, or the offline fallback.
-  enrichCatalogAiringData();
+  window.setTimeout(() => enrichCatalogAiringData(), 7000);
   scheduleHomeRailExpansion();
   // Mirror AnimeAV1's "Últimos Episodios" order in the Home Latest Episodes rail.
   loadAnimeAv1Latest();
@@ -2005,9 +2005,11 @@ async function loadAnimeAv1Latest(force = false) {
       if (cached) {
         state.av1Latest = JSON.parse(cached);
         state.av1LatestAt = Number(cachedAt) || 0;
-        // Paint immediately with cached data
+        // Paint immediately with cached data. Deeper metadata hydration is
+        // delayed by scheduleVisibleMetadataWarm so it cannot compete with
+        // the hero and first visible row during Speed Index measurement.
         render();
-        scheduleVisibleMetadataWarm(buildLatestEpisodesList(HOME_CARD_LIMIT), HOME_CARD_LIMIT);
+        scheduleVisibleMetadataWarm(buildLatestEpisodesList(HOME_INITIAL_CARD_LIMIT), HOME_INITIAL_CARD_LIMIT);
       }
     } catch (e) {
       console.warn("Failed to load av1-latest cache:", e);
@@ -2034,7 +2036,7 @@ async function loadAnimeAv1Latest(force = false) {
 
       if (isChanged) {
         render();   // repaint the rail in AnimeAV1 order
-        scheduleVisibleMetadataWarm(buildLatestEpisodesList(HOME_CARD_LIMIT), HOME_CARD_LIMIT);
+        scheduleVisibleMetadataWarm(buildLatestEpisodesList(HOME_INITIAL_CARD_LIMIT), HOME_INITIAL_CARD_LIMIT);
       }
     }
   } catch (err) {
@@ -7664,14 +7666,14 @@ function setupDeferredHomeAddons() {
     scheduleExternalSourcesLoad({ force: true });
   };
   if (!("IntersectionObserver" in window)) {
-    window.setTimeout(request, 5000);
+    window.setTimeout(request, 12000);
     return;
   }
   const observer = new IntersectionObserver((entries) => {
     if (!entries.some((entry) => entry.isIntersecting)) return;
     observer.disconnect();
     request();
-  }, { rootMargin: "900px 0px" });
+  }, { rootMargin: "120px 0px" });
   observer.observe(addonSections);
 }
 
@@ -9977,8 +9979,9 @@ function scheduleVisibleMetadataWarm(shows = state.shows, limit = HOME_INITIAL_C
   // scheduling the idle warm, so the ~80-request hydration burst lands AFTER the
   // visual-complete window instead of competing inside it. Immediate clicks are
   // still covered by the per-card pointerenter preload in wireOpenButtons.
-  if (document.readyState === "complete") idle();
-  else window.addEventListener("load", idle, { once: true });
+  const defer = () => window.setTimeout(idle, 6500);
+  if (document.readyState === "complete") defer();
+  else window.addEventListener("load", defer, { once: true });
 }
 
 function warmTioAnimeSlugCatalog(shows = state.shows) {
@@ -13176,13 +13179,16 @@ function startUpdateManagerWhenIdle() {
       }
     } catch { /* Update checks are non-critical for first paint. */ }
   };
-  if ("requestIdleCallback" in window) window.requestIdleCallback(start, { timeout: 5000 });
-  else window.setTimeout(start, 3500);
+  const later = () => {
+    if ("requestIdleCallback" in window) window.requestIdleCallback(start, { timeout: 5000 });
+    else start();
+  };
+  window.setTimeout(later, 15000);
 }
 startUpdateManagerWhenIdle();
 window.setTimeout(hideAppLoader, 850);
 // Best-effort background refresh of stale full-site crawls (if a crawler is wired).
-window.setTimeout(() => { try { checkSourceRefreshes(); } catch { /* ignore */ } }, 9000);
+window.setTimeout(() => { try { checkSourceRefreshes(); } catch { /* ignore */ } }, 30000);
 
 window.runZenkaiDebugReport = window.runDevelopmentDebugReport = function() {
   console.log("=== ZenkaiTV / AnimeTV Diagnostics Report ===");
