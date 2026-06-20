@@ -432,7 +432,7 @@ async function loadAnimeSources() {
     state.carouselIndex = 0;
     setSourceStatus(catalogStatusLabel("Cached ZenkaiTV catalog", cachedCatalog));
     render();
-    scheduleVisibleMetadataWarm(buildLatestEpisodesList(state.homeCardLimit), state.homeCardLimit);
+    scheduleVisibleMetadataWarm(buildLatestEpisodesList(HOME_INITIAL_CARD_LIMIT), HOME_INITIAL_CARD_LIMIT);
   }
 
   const serverCatalog = await timedRequest("ZenkaiTV metadata API", () => fetchLocalMetadataCatalog()).catch(() => []);
@@ -445,7 +445,7 @@ async function loadAnimeSources() {
     writeResponseCache("main-catalog", regularCatalogSnapshot());
     setSourceStatus(catalogStatusLabel("ZenkaiTV API", state.shows));
     render();
-    scheduleVisibleMetadataWarm(buildLatestEpisodesList(state.homeCardLimit), state.homeCardLimit);
+    scheduleVisibleMetadataWarm(buildLatestEpisodesList(HOME_INITIAL_CARD_LIMIT), HOME_INITIAL_CARD_LIMIT);
     scheduleHomeRailExpansion();
     return;
   }
@@ -486,7 +486,7 @@ async function loadAnimeSources() {
     writeResponseCache("direct-catalog", merged);
     writeResponseCache("main-catalog", merged);
     setSourceStatus(catalogStatusLabel("AniList + Jikan", merged));
-    scheduleVisibleMetadataWarm(buildLatestEpisodesList(state.homeCardLimit), state.homeCardLimit);
+    scheduleVisibleMetadataWarm(buildLatestEpisodesList(HOME_INITIAL_CARD_LIMIT), HOME_INITIAL_CARD_LIMIT);
   } else {
     state.apiStatus.direct = "Offline";
     if (!state.shows.length) replaceRegularCatalog(fallbackShows);
