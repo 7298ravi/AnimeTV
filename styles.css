@@ -1018,16 +1018,69 @@ body:not([data-route="home"]) .stremio-search {
 }
 
 .library-search {
+  width: 100%;
   max-width: min(52rem, 100%);
   margin: 1rem 0;
 }
 
 .library-search input {
-  min-height: 3.7rem;
-  border-radius: var(--radius-lg);
-  background: rgba(7, 9, 19, 0.56);
-  backdrop-filter: blur(18px);
-  box-shadow: inset 0 0 0 0.08rem rgba(255, 255, 255, 0.07), 0 0.8rem 1.8rem rgba(0, 0, 0, 0.16);
+  min-height: 2.85rem;
+  border-radius: 9rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: none;
+  font-size: 0.82rem;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.library-search input:focus {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(138, 85, 255, 0.6);
+  box-shadow: 0 0 0.8rem rgba(138, 85, 255, 0.18);
+}
+
+.library-filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.95rem;
+  border-radius: 9rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(229, 233, 255, 0.9);
+  font-size: 0.78rem;
+  font-weight: 900;
+  cursor: pointer;
+  margin-left: 1.2rem;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.library-filter-toggle:is(:hover, :focus-visible, .is-tv-focused) {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+  outline: none;
+}
+
+.library-filter-toggle.is-active {
+  background: rgba(138, 85, 255, 0.18);
+  border-color: rgba(138, 85, 255, 0.5);
+  color: #fff;
+}
+
+@media (min-width: 761px) {
+  #library .library-filter-panel {
+    margin-left: 3.7rem !important;
+    margin-right: 3.7rem !important;
+    width: auto !important;
+    max-width: none !important;
+  }
+  .library-search {
+    margin-left: 3.7rem !important;
+    margin-right: 3.7rem !important;
+    width: auto !important;
+    max-width: none !important;
+  }
 }
 
 .source-status {
@@ -1426,11 +1479,11 @@ body:not([data-route="home"]) .section-heading h2 {
   grid-template-rows: repeat(2, auto);
   grid-auto-columns: calc((100% - (6 * var(--rail-gap))) / 7);
   overflow: hidden;
-  padding-bottom: 0.4rem;
+  padding-bottom: 1.25rem;
 }
 
 .poster-grid.is-skeleton-loading .show-card > span:not(.thumb-art) {
-  min-height: 2.2rem;
+  min-height: 2.5rem;
 }
 
 .rail-arrow {
@@ -1822,7 +1875,7 @@ body:not([data-route="home"]) .section-heading h2 {
   aspect-ratio: 16 / 7.5;
   overflow: hidden;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.07);
+  background: linear-gradient(135deg, rgba(138, 85, 255, 0.28), rgba(0, 210, 255, 0.16)), rgba(255, 255, 255, 0.07);
   box-shadow: 0 0.85rem 1.4rem rgba(0, 0, 0, 0.22);
 }
 
@@ -6110,9 +6163,9 @@ body.player-cinema-open .close-button {
   background-size: cover;
   background-repeat: no-repeat;
   opacity: 1;
-  filter: saturate(1.12) contrast(1.06) brightness(0.82);
-  transform: scale(1.002);
-  transition: opacity 280ms ease, transform 420ms ease, filter 420ms ease;
+  filter: none;
+  transform: none;
+  transition: opacity 220ms ease;
 }
 
 .carousel-backdrop-image {
@@ -6187,7 +6240,7 @@ body.player-cinema-open .close-button {
 }
 
 .carousel-poster-wrap {
-  display: none;
+  display: none !important;
 }
 
 .carousel-poster-wrap::before {
@@ -6276,7 +6329,7 @@ body.player-cinema-open .close-button {
 .carousel-stage.is-loading .carousel-info {
   align-self: center;
   justify-self: start;
-  max-width: min(27rem, 58vw);
+  max-width: min(46rem, 62vw);
   padding-left: 0;
   transform: translateY(0);
 }
@@ -6286,7 +6339,7 @@ body.player-cinema-open .close-button {
 }
 
 .carousel-stage.is-loading .carousel-info p:not(.eyebrow) {
-  max-width: 30rem;
+  max-width: 40rem;
 }
 
 .carousel-stage.is-loading .carousel-meta-line {
@@ -6889,11 +6942,11 @@ body.reduce-motion .watch-overlay.is-closing .watch-panel {
   display: grid;
   gap: 1rem;
   max-width: min(74rem, calc(100vw - 10rem));
-  margin: 0.15rem 0 1.45rem;
-  padding: 1.1rem 1.2rem;
-  border-radius: 1.1rem;
-  background: linear-gradient(180deg, rgba(20, 25, 42, 0.82), rgba(13, 17, 30, 0.82));
-  box-shadow: inset 0 0 0 0.06rem rgba(255, 255, 255, 0.06), 0 1rem 2.4rem rgba(4, 7, 18, 0.45);
+  margin: 0.15rem 0 1.2rem;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .library-letter-row {
@@ -6905,30 +6958,30 @@ body.reduce-motion .watch-overlay.is-closing .watch-panel {
 }
 
 .library-letter {
-  min-width: 2.18rem;
+  min-width: 2rem;
   height: 2rem;
-  border-radius: 0.5rem;
+  border-radius: 50%;
   border: 0;
-  color: rgba(229, 233, 255, 0.82);
-  background: rgba(91, 105, 158, 0.26);
-  font-size: 0.78rem;
-  font-weight: 900;
+  color: rgba(229, 233, 255, 0.65);
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 700;
   cursor: pointer;
-  box-shadow: inset 0 0 0 0.06rem rgba(255, 255, 255, 0.06);
+  box-shadow: none;
   transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
 }
 
 .library-letter:is(:hover, :focus-visible, .is-tv-focused) {
   color: #fff;
-  background: rgba(138, 85, 255, 0.42);
+  background: rgba(255, 255, 255, 0.08);
   outline: none;
   transform: translateY(-0.05rem);
 }
 
 .library-letter.is-selected {
-  color: #06121a;
+  color: #fff;
   background: linear-gradient(135deg, var(--cyan), #6b8bff);
-  box-shadow: 0 0.4rem 1rem rgba(0, 210, 255, 0.28);
+  box-shadow: 0 0.3rem 0.8rem rgba(0, 210, 255, 0.28);
   outline: none;
 }
 
@@ -6945,18 +6998,27 @@ body.reduce-motion .watch-overlay.is-closing .watch-panel {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  min-height: 2.55rem;
-  padding: 0 0.85rem;
-  border-radius: 0.6rem;
-  color: rgba(174, 184, 226, 0.9);
-  background: rgba(43, 48, 72, 0.6);
-  box-shadow: inset 0 0 0 0.06rem rgba(255, 255, 255, 0.05);
-  transition: box-shadow 0.15s ease, background 0.15s ease;
+  min-height: 2.3rem;
+  padding: 0 1rem;
+  border-radius: 9rem;
+  color: rgba(229, 233, 255, 0.78);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 
-.library-select-wrap:focus-within {
-  background: rgba(43, 48, 72, 0.85);
-  box-shadow: inset 0 0 0 0.09rem rgba(138, 85, 255, 0.55);
+.library-select-wrap:hover,
+.library-sort-wrap:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.library-select-wrap:focus-within,
+.library-sort-wrap:focus-within {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(138, 85, 255, 0.6);
+  box-shadow: 0 0 0.8rem rgba(138, 85, 255, 0.18);
 }
 
 /* Custom chevron — replaces the inconsistent native one across browsers/OS. */
@@ -6964,7 +7026,7 @@ body.reduce-motion .watch-overlay.is-closing .watch-panel {
 .library-sort-wrap::after {
   content: "";
   position: absolute;
-  right: 0.85rem;
+  right: 0.95rem;
   top: 50%;
   width: 0.5rem;
   height: 0.5rem;
@@ -6985,7 +7047,7 @@ body.reduce-motion .watch-overlay.is-closing .watch-panel {
 .library-sort-wrap select {
   flex: 1;
   min-width: 0;
-  height: 2.4rem;
+  height: 2.2rem;
   padding-right: 1.1rem;
   border: 0;
   color: #f6f3ff;
@@ -7011,12 +7073,12 @@ body.reduce-motion .watch-overlay.is-closing .watch-panel {
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  min-height: 2.55rem;
-  padding: 0 1.15rem;
-  border: 0.08rem solid rgba(255, 255, 255, 0.12);
-  border-radius: 0.6rem;
+  min-height: 2.3rem;
+  padding: 0 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9rem;
   color: rgba(229, 233, 255, 0.92);
-  background: rgba(91, 105, 158, 0.16);
+  background: rgba(255, 255, 255, 0.03);
   font-size: 0.82rem;
   font-weight: 900;
   cursor: pointer;
@@ -7030,8 +7092,8 @@ body.reduce-motion .watch-overlay.is-closing .watch-panel {
 
 .library-filter-reset:is(:hover, :focus-visible, .is-tv-focused) {
   color: #fff;
-  background: rgba(138, 85, 255, 0.24);
-  border-color: rgba(138, 85, 255, 0.6);
+  background: rgba(225, 29, 72, 0.16);
+  border-color: rgba(225, 29, 72, 0.45);
   transform: translateY(-0.05rem);
   outline: none;
 }
@@ -7506,10 +7568,8 @@ body.reduce-motion .watch-backdrop-blur { transform: scale(1.08); }
   background-size: cover;
   background-position: center;
 }
-/* Vertical poster/cover fallback: show it whole (contain) over the blurred
-   fill rather than cropping it like a wide backdrop. */
 .watch-backdrop.is-poster-fit {
-  background-size: contain;
+  background-size: cover;
   background-position: center;
   animation: none;
 }

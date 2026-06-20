@@ -271,6 +271,8 @@ const carouselOpen = document.querySelector("#carouselOpen");
 const carouselStage = document.querySelector("#carouselStage");
 const carouselIndicators = document.querySelector("#carouselIndicators");
 let carouselTimer = null;
+let _carouselIndicatorImagesReady = false;
+let _carouselIndicatorHydrationQueued = false;
 let lastInputWasPointer = false;
 
 function hideAppLoader() {
@@ -2056,6 +2058,9 @@ function hqImage(url) {
   if (u.includes("cdn.animeav1.com")) {
     return u.replace("/thumbnails/", "/covers/");
   }
+  if (u.includes("image.tmdb.org/t/p/")) {
+    return u.replace(/\/w(?:92|154|185|300|342|500)\//, "/w780/");
+  }
   return u;
 }
 
@@ -2370,12 +2375,11 @@ function renderCarousel() {
   _carouselPaintedId = String(show.id || "");
 
   const art = carouselArtworkOrPoster(show);
-  // Full-bleed hero: serve a per-device width via srcset (mobile pulls ~768px,
-  // desktop up to 1920px) at the proxy's MAX quality (q92) so the showcase image
-  // is as crisp as the source allows, while still right-sized per device.
-  const HERO_WIDTHS = [768, 1024, 1280, 1600, 1920];
-  const HERO_QUALITY = 92;
-  const deliveredArt = imageDeliveryUrl(art, 1600, HERO_QUALITY);
+  // Full-bleed hero: keep the single LCP image crisp but right-sized. The old
+  // 1600/1920 candidates looked great, but cost visible paint time on desktop.
+  const HERO_WIDTHS = [640, 960, 1280];
+  const HERO_QUALITY = 88;
+  const deliveredArt = imageDeliveryUrl(art, 1280, HERO_QUALITY);
   const heroSrcSet = art ? imageDeliverySrcSet(art, HERO_WIDTHS, HERO_QUALITY) : "";
   carouselBackdrop.classList.toggle("has-banner", Boolean(art));
   carouselBackdrop.style.backgroundImage = "linear-gradient(135deg, #121733 0%, #1b1a3b 38%, #0b2637 100%)";
@@ -2422,7 +2426,7 @@ function renderCarouselIndicators(items) {
   if (!carouselIndicators) return;
   carouselIndicators.innerHTML = items.slice(0, 8).map((show, index) => `
     <button class="carousel-dot focusable ${index === state.carouselIndex ? "is-selected" : ""}" data-carousel-index="${index}" aria-label="Show ${escapeHtml(getShowTitle(show))}">
-      ${carouselArtworkOrPoster(show) ? `<img referrerpolicy="no-referrer" src="${escapeHtml(imageDeliveryUrl(carouselArtworkOrPoster(show), 240, 75))}" alt="" width="240" height="135" loading="lazy" decoding="async">` : "<span></span>"}
+      ${_carouselIndicatorImagesReady && carouselArtworkOrPoster(show) ? `<img referrerpolicy="no-referrer" src="${escapeHtml(imageDeliveryUrl(carouselArtworkOrPoster(show), 180, 72))}" alt="" width="180" height="101" loading="lazy" decoding="async" fetchpriority="low">` : "<span></span>"}
     </button>
   `).join("");
 
@@ -2436,6 +2440,25 @@ function renderCarouselIndicators(items) {
       restartCarouselTimer();
     });
   });
+  if (!_carouselIndicatorImagesReady) scheduleCarouselIndicatorHydration();
+}
+
+function scheduleCarouselIndicatorHydration() {
+  if (_carouselIndicatorHydrationQueued || _carouselIndicatorImagesReady) return;
+  _carouselIndicatorHydrationQueued = true;
+  const hydrate = () => {
+    _carouselIndicatorImagesReady = true;
+    _carouselIndicatorHydrationQueued = false;
+    if (state.route === "home") renderCarousel();
+  };
+  const afterFirstPaint = () => {
+    if ("requestIdleCallback" in window) {
+      window.requestIdleCallback(hydrate, { timeout: 1800 });
+    } else {
+      window.setTimeout(hydrate, 900);
+    }
+  };
+  window.setTimeout(afterFirstPaint, 650);
 }
 
 function simpleCarouselText(show) {
@@ -2457,7 +2480,8 @@ document.addEventListener("error", (event) => {
                         img.classList.contains("thumb-backdrop") ||
                         img.classList.contains("ep-thumb-img") ||
                         img.classList.contains("season-card-img") ||
-                        img.classList.contains("watch-poster");
+                        img.classList.contains("watch-poster") ||
+                        img.classList.contains("schedule-thumb-img");
                         
   if (hasCandidates) {
     try { ImageResolver.markImageFailed(img.currentSrc || img.src); } catch { /* resolver optional */ }
@@ -2501,14 +2525,14 @@ document.addEventListener("error", (event) => {
     }
   } else if (img.classList.contains("season-card-img")) {
     img.style.display = "none";
-  } else if (img.classList.contains("thumb-poster") || img.classList.contains("thumb-backdrop") || img.closest(".carousel-dot")) {
+  } else if (img.classList.contains("thumb-poster") || img.classList.contains("thumb-backdrop") || img.classList.contains("schedule-thumb-img") || img.closest(".carousel-dot")) {
     // Set a transparent 1x1 gif to clear the broken image icon, then fade out
     // so the card's brand gradient (.thumb-art background) shows through.
     img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
     img.removeAttribute("srcset");
     img.style.opacity = "0";
     // Add the branded "Z" fallback logo to the card
-    const card = img.closest(".thumb-art") || img.closest(".carousel-dot");
+    const card = img.closest(".thumb-art") || img.closest(".schedule-thumb") || img.closest(".carousel-dot");
     if (card && !card.querySelector(".thumb-fallback-mark")) {
       const mark = document.createElement("div");
       mark.className = "thumb-fallback-mark";
@@ -3115,12 +3139,11 @@ function cardTemplate(show, index = 0) {
   const fallbackData = deliveredCandidates.length
     ? ` data-image-fallbacks="${escapeHtml(encodeURIComponent(JSON.stringify(deliveredCandidates)))}" data-image-fallback-index="0"`
     : "";
-  // Above-the-fold posters (first row or two of a rail) load eagerly with high
-  // priority so they appear immediately on first load instead of trickling in;
-  // the rest stay lazy to avoid hammering the image proxy.
-  const eager = Number(index) < 12;
+  // Above-the-fold posters load eagerly, but the hero remains the only
+  // high-priority image so LCP is not delayed by a dozen competing card fetches.
+  const eager = Number(index) < 7;
   const loadingAttrs = eager
-    ? `loading="eager" fetchpriority="high"`
+    ? `loading="eager"`
     : `loading="lazy" fetchpriority="low"`;
   const image = posterUrl
     ? `
@@ -3290,10 +3313,32 @@ function renderSchedule() {
             <a class="schedule-item focusable" href="${escapeHtml(animePathForShow(show))}" data-open-show="${escapeHtml(show.id)}" data-open-season="${getCardTarget(show).seasonNumber}" data-open-episode="${getCardTarget(show).episodeNumber}">
               <span class="schedule-thumb">
                 ${(() => {
-                  const schedImg = show.image || show.images?.poster || show.images?.cover ||
-                    show.coverImageLarge || show.cover || show.poster || show.thumbnail || "";
-                  return schedImg
-                    ? `<img referrerpolicy="no-referrer" src="${escapeHtml(imageDeliveryUrl(schedImg, 360, 86))}" alt="" width="160" height="90" loading="lazy" decoding="async">`
+                  const scheduleCandidates = [
+                    show.image,
+                    show.images?.poster,
+                    show.images?.cover,
+                    show.coverImageLarge,
+                    show.cover,
+                    show.poster,
+                    show.thumbnail,
+                    show.images?.backdrop,
+                    show.images?.banner,
+                    show.tmdbBackdrop,
+                    show.highQualityBackground,
+                    show.banner,
+                    show.bannerImage,
+                    show.backdrop,
+                    show.heroImage,
+                    show.wideImage,
+                    show.landscapeImage
+                  ].map((v) => hqImage(String(v || "").trim())).filter(Boolean);
+                  const uniqueCandidates = [...new Set(scheduleCandidates)];
+                  const deliveredCandidates = uniqueCandidates.map((url) => imageDeliveryUrl(url, 360, 86));
+                  const fallbackData = deliveredCandidates.length > 1
+                    ? ` data-image-fallbacks="${escapeHtml(encodeURIComponent(JSON.stringify(deliveredCandidates)))}" data-image-fallback-index="0"`
+                    : "";
+                  return deliveredCandidates[0]
+                    ? `<img referrerpolicy="no-referrer" class="schedule-thumb-img" src="${escapeHtml(deliveredCandidates[0])}" alt="" width="160" height="90" loading="lazy" decoding="async"${fallbackData}>`
                     : "";
                 })()}
                 <span>${cardEpisodeLabel(show)}</span>
@@ -6139,10 +6184,12 @@ function resetVideoFrame() {
     show?.coverImageLarge,
     show?.image,
     "logo-round.png"
-  ].map(u => String(u || "").trim()).filter(Boolean);
-  const watchPosterUrl = watchPosterCandidates[0] || "";
-  const watchFallbackData = watchPosterCandidates.length
-    ? ` data-image-fallbacks="${escapeHtml(encodeURIComponent(JSON.stringify(watchPosterCandidates)))}" data-image-fallback-index="0"`
+  ].map(u => hqImage(String(u || "").trim())).filter(Boolean);
+  const uniqueCandidates = [...new Set(watchPosterCandidates)];
+  const deliveredCandidates = uniqueCandidates.map(url => imageDeliveryUrl(url, 480, 88));
+  const watchPosterUrl = deliveredCandidates[0] || "";
+  const watchFallbackData = deliveredCandidates.length
+    ? ` data-image-fallbacks="${escapeHtml(encodeURIComponent(JSON.stringify(deliveredCandidates)))}" data-image-fallback-index="0"`
     : "";
 
   frame.innerHTML = `
@@ -6384,7 +6431,8 @@ function applyWatchBackdrop(show, season) {
   ].map((value) => hqImage(String(value || "").trim())).filter(Boolean));
   const paint = (url) => {
     const posterFit = Boolean(url) && !wideSources.has(url);
-    backdrop.style.backgroundImage = url ? `url("${url}")` : animeBackdropFallback(show);
+    const optimized = url ? imageDeliveryUrl(url, 1920, 92) : "";
+    backdrop.style.backgroundImage = optimized ? `url("${optimized}")` : animeBackdropFallback(show);
     backdrop.dataset.backdropKey = key;
     backdrop.dataset.backdropUrl = url || "";
     backdrop.classList.toggle("has-art", Boolean(url));
@@ -12024,6 +12072,26 @@ document.querySelectorAll("[data-filter]").forEach((button) => {
     render();
   });
 });
+
+// Toggle library filter panel visibility
+const filterToggle = document.getElementById("libraryFilterToggle");
+const filterPanel = document.querySelector(".library-filter-panel");
+if (filterToggle && filterPanel) {
+  filterToggle.addEventListener("click", () => {
+    const isHidden = filterPanel.hasAttribute("hidden") || filterPanel.style.display === "none";
+    if (isHidden) {
+      filterPanel.removeAttribute("hidden");
+      filterPanel.style.display = "grid";
+      filterToggle.setAttribute("aria-expanded", "true");
+      filterToggle.classList.add("is-active");
+    } else {
+      filterPanel.setAttribute("hidden", "");
+      filterPanel.style.display = "none";
+      filterToggle.setAttribute("aria-expanded", "false");
+      filterToggle.classList.remove("is-active");
+    }
+  });
+}
 
 document.querySelectorAll("[data-library-letter]").forEach((button) => {
   button.addEventListener("click", () => {
