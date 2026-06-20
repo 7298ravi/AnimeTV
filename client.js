@@ -2005,7 +2005,7 @@ async function loadAnimeAv1Latest(force = false) {
         state.av1LatestAt = Number(cachedAt) || 0;
         // Paint immediately with cached data
         render();
-        warmVisibleShowMetadata(buildLatestEpisodesList(HOME_CARD_LIMIT), HOME_CARD_LIMIT);
+        scheduleVisibleMetadataWarm(buildLatestEpisodesList(HOME_CARD_LIMIT), HOME_CARD_LIMIT);
       }
     } catch (e) {
       console.warn("Failed to load av1-latest cache:", e);
@@ -2032,7 +2032,7 @@ async function loadAnimeAv1Latest(force = false) {
 
       if (isChanged) {
         render();   // repaint the rail in AnimeAV1 order
-        warmVisibleShowMetadata(buildLatestEpisodesList(HOME_CARD_LIMIT), HOME_CARD_LIMIT);
+        scheduleVisibleMetadataWarm(buildLatestEpisodesList(HOME_CARD_LIMIT), HOME_CARD_LIMIT);
       }
     }
   } catch (err) {
@@ -9921,11 +9921,16 @@ function warmVisibleShowMetadata(shows = state.shows, limit = HOME_INITIAL_CARD_
 // hydrates on demand via hydrateOpenShowDetails).
 function scheduleVisibleMetadataWarm(shows = state.shows, limit = HOME_INITIAL_CARD_LIMIT) {
   const run = () => { try { warmVisibleShowMetadata(shows, limit); } catch { /* non-fatal */ } };
-  if ("requestIdleCallback" in window) {
-    window.requestIdleCallback(run, { timeout: 2500 });
-  } else {
-    window.setTimeout(run, 1200);
-  }
+  const idle = () => {
+    if ("requestIdleCallback" in window) window.requestIdleCallback(run, { timeout: 2500 });
+    else window.setTimeout(run, 300);
+  };
+  // Wait for `load` (hero LCP image + critical resources done) before even
+  // scheduling the idle warm, so the ~80-request hydration burst lands AFTER the
+  // visual-complete window instead of competing inside it. Immediate clicks are
+  // still covered by the per-card pointerenter preload in wireOpenButtons.
+  if (document.readyState === "complete") idle();
+  else window.addEventListener("load", idle, { once: true });
 }
 
 function warmTioAnimeSlugCatalog(shows = state.shows) {
