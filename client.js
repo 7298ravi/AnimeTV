@@ -117,15 +117,6 @@ const KNOWN_SOURCE_SERVERS = [
       (s.id || "").includes("jkanime") ||
       (s.label || "").toLowerCase().includes("jkanime") ||
       (s.externalUrl || s.videoUrl || "").includes("jkanime.net")
-  },
-  {
-    key: "animeonlineninja",
-    label: "AniméOnline",
-    desc: "AniméOnlineNinja Latino dub servers",
-    match: (s) =>
-      (s.id || "").includes("animeonlineninja") ||
-      (s.label || "").toLowerCase().includes("animéonline") ||
-      (s.label || "").toLowerCase().includes("animeonineninja")
   }
 ];
 
@@ -151,13 +142,6 @@ const PLAYBACK_SCRAPERS = [
     desc: "JKAnime.net embed servers — Spanish sub, multiple mirror players.",
     endpoint: "/api/jkanime/sources",
     health: "/api/jkanime/health"
-  },
-  {
-    id: "animeonlineninja",
-    name: "AniméOnline Ninja",
-    desc: "Latino voice (Audio Latino) — AniméOnlineNinja.com multiserver scraper.",
-    endpoint: "/api/animeonlineninja/sources",
-    health: "/api/animeonlineninja/health"
   }
 ];
 
@@ -209,7 +193,7 @@ const state = {
   localSources: [],
   customSources: JSON.parse(localStorage.getItem("animetv-custom-sources") || "[]"),
   // Built-in playback scrapers the user can toggle on/off (default all on).
-  scraperEnabled: { animeav1: true, tioanime: true, animeonlineninja: true, ...JSON.parse(localStorage.getItem("zenkaitv-scrapers") || "{}") },
+  scraperEnabled: { animeav1: true, tioanime: true, ...JSON.parse(localStorage.getItem("zenkaitv-scrapers") || "{}") },
   // Compact (collapsed) icon rail is the DEFAULT; expand to reveal labels.
   sidebarCollapsed: localStorage.getItem("animetv-sidebar-collapsed") !== "false",
   apiStatus: {
@@ -4508,10 +4492,8 @@ async function attachPlaybackSourceOptions(show, episode, seasonNumber = 1) {
     lookups.push(playbackLookupWithTimeout("JKAnime scraper", attachJKAnimeSources(show, episode), 12000)
       .then(() => updateServerCheck("jkanime", getKnownSourceServer("jkanime").match)));
   } else { episode.jkAnimeSourcesChecked = true; episode.serverChecks.jkanime = "notfound"; }
-  if (isScraperEnabled("animeonlineninja")) {
-    lookups.push(playbackLookupWithTimeout("AniméOnlineNinja scraper", attachAnimeonlineNinjaSources(show, episode), 15000)
-      .then(() => updateServerCheck("animeonlineninja", getKnownSourceServer("animeonlineninja").match)));
-  } else { episode.animeonlineNinjaSourcesChecked = true; episode.serverChecks.animeonlineninja = "notfound"; }
+  episode.animeonlineNinjaSourcesChecked = true;
+  episode.serverChecks.animeonlineninja = "notfound";
   await Promise.allSettled(lookups);
 
   // Ensure any timed-out servers are marked not-found after every source has had a chance.
@@ -7467,7 +7449,10 @@ function orderSourceOptions(sources = []) {
 }
 
 function getEpisodePlaybackSources(episode = {}) {
-  return orderSourceOptions(normalizeEpisodeSourceOptions(episode));
+  return orderSourceOptions(normalizeEpisodeSourceOptions(episode).filter((source) => {
+    const text = sourceIdentityText(source);
+    return !text.includes("animeonlineninja") && !text.includes("animéonline") && !text.includes("animeonline");
+  }));
 }
 
 function getSelectedEpisodeSource(episode = {}) {
