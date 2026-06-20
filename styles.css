@@ -7569,8 +7569,9 @@ body.reduce-motion .watch-backdrop-blur { transform: scale(1.08); }
   background-position: center;
 }
 .watch-backdrop.is-poster-fit {
-  background-size: cover;
+  background-size: min(42vw, 34rem) auto;
   background-position: center;
+  background-repeat: no-repeat;
   animation: none;
 }
 @keyframes watch-backdrop-zoom {

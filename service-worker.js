@@ -1,4 +1,4 @@
-const CACHE_NAME = "zenkaitv-v376";
+const CACHE_NAME = "zenkaitv-v381";
 const SHELL_ASSETS = [
   "./",
   "./index.html",
@@ -96,3 +96,4 @@ self.addEventListener("sync", (event) => {
     event.waitUntil(fetch("/api/check-update").catch(() => null));
   }
 });
+

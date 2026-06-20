@@ -2267,23 +2267,6 @@ function getBackdropSeasonNumber(season = null) {
   return active > 0 ? active : 1;
 }
 
-function firstSeasonStillForBackdrop(show = {}, seasonNumber = 0) {
-  const scoped = seasonNumber && show.tmdbStillsBySeason && show.tmdbStillsBySeason[seasonNumber]
-    ? show.tmdbStillsBySeason[seasonNumber]
-    : null;
-  if (!scoped || typeof scoped !== "object") return "";
-  try {
-    if (typeof ImageResolver !== "undefined" && ImageResolver.firstSeasonStillFromMap) {
-      return ImageResolver.firstSeasonStillFromMap(scoped) || "";
-    }
-  } catch { /* resolver optional */ }
-  const numbers = Object.keys(scoped)
-    .map((key) => Number(key) || 0)
-    .filter((key) => key > 0 && scoped[key])
-    .sort((a, b) => a - b);
-  return numbers.length ? scoped[numbers[0]] : "";
-}
-
 function seasonWideBackdropCandidates(show = {}, season = null) {
   const seasonNumber = getBackdropSeasonNumber(season);
   return [
@@ -2292,7 +2275,6 @@ function seasonWideBackdropCandidates(show = {}, season = null) {
     season?.banner,
     season?.backdrop,
     seasonNumber && show.tmdbSeasonBackdropsBySeason ? show.tmdbSeasonBackdropsBySeason[seasonNumber] : "",
-    firstSeasonStillForBackdrop(show, seasonNumber),
     season?.wideImage,
     season?.landscapeImage
   ].map((value) => hqImage(String(value || "").trim()));
@@ -2300,16 +2282,12 @@ function seasonWideBackdropCandidates(show = {}, season = null) {
 
 function seasonPosterFallbackCandidates(show = {}, season = null) {
   const seasonNumber = getBackdropSeasonNumber(season);
-  let resolverSeasonBackdrop = "";
-  try {
-    resolverSeasonBackdrop = typeof ImageResolver !== "undefined" && ImageResolver.getSeasonBackdrop
-      ? ImageResolver.getSeasonBackdrop(show, seasonNumber, season)
-      : "";
-  } catch { resolverSeasonBackdrop = ""; }
   return [
     seasonNumber && show.tmdbSeasonPostersBySeason ? show.tmdbSeasonPostersBySeason[seasonNumber] : "",
-    resolverSeasonBackdrop,
-    show.tmdbSeasonPoster
+    season?.tmdbSeasonPoster,
+    show.tmdbSeasonPoster,
+    season?.poster,
+    season?.image
   ].map((value) => hqImage(String(value || "").trim()));
 }
 
@@ -2325,7 +2303,6 @@ function getWatchBackdropArtwork(show = {}, season = null) {
   season = season || {};
   const candidates = [
     ...seasonWideBackdropCandidates(show, season),
-    ...seasonPosterFallbackCandidates(show, season),
     show.images?.backdrop,
     show.images?.banner,
     show.tmdbBackdrop,
@@ -2337,11 +2314,14 @@ function getWatchBackdropArtwork(show = {}, season = null) {
     show.wideImage,
     show.landscapeImage,
     show.jikanBackground,
-    season?.image,
-    season?.poster,
+    ...seasonPosterFallbackCandidates(show, season),
     show.coverImageLarge,
     show.images?.poster,
     show.images?.cover,
+    show.tmdbPoster,
+    show.poster,
+    show.cover,
+    show.coverImage,
     show.image
   ].map((value) => hqImage(String(value || "").trim()));
   return pickImage(candidates);
@@ -6545,7 +6525,12 @@ function applyWatchBackdrop(show, season) {
   try { currentFailed = Boolean(currentUrl && typeof ImageResolver !== "undefined" && ImageResolver.isImageFailed(currentUrl)); }
   catch { currentFailed = false; }
   if (currentKey === key && currentUrl && !currentFailed && art && art !== currentUrl) {
-    art = currentUrl;
+    // Keep an existing real wide backdrop if a later render temporarily offers a
+    // poster fallback, but allow hydration to upgrade a poster/placeholder into
+    // TMDB/AniList wide art. This avoids both flicker and sticky bad artwork.
+    const currentIsWide = wideSources.has(currentUrl);
+    const nextIsWide = wideSources.has(art);
+    if (currentIsWide && !nextIsWide) art = currentUrl;
   }
   paint(art);
   if (art) {

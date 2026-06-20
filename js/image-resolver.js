@@ -20,7 +20,7 @@ const ImageResolver = (function () {
   "use strict";
 
   const TMDB_IMG_BASE = "https://image.tmdb.org/t/p";
-  const MATCH_CACHE_PREFIX = "zenkaitv:tmdb-match:v14:";
+  const MATCH_CACHE_PREFIX = "zenkaitv:tmdb-match:v15:";
   const MATCH_CACHE_TTL_MS = 1000 * 60 * 60 * 24; // Refresh airing episode stills daily.
   const FAILED_CACHE_KEY = "zenkaitv:img-failed:v1";
   const FAILED_CACHE_MAX = 400;
@@ -787,16 +787,12 @@ const ImageResolver = (function () {
   function getSeasonBackdrop(anime, appSeasonNumber, appSeasonMeta) {
     if (!anime) return "";
     const sNum = Number(appSeasonNumber || appSeasonMeta?.season || 0);
-    const scopedStills = sNum && anime.tmdbStillsBySeason && anime.tmdbStillsBySeason[sNum]
-      ? anime.tmdbStillsBySeason[sNum]
-      : null;
     return firstValidImage([
       appSeasonMeta?.tmdbBackdrop,
       appSeasonMeta?.highQualityBackground,
       appSeasonMeta?.banner,
       appSeasonMeta?.backdrop,
       sNum && anime.tmdbSeasonBackdropsBySeason ? anime.tmdbSeasonBackdropsBySeason[sNum] : "",
-      firstSeasonStillFromMap(scopedStills),
       sNum && anime.tmdbSeasonPostersBySeason ? anime.tmdbSeasonPostersBySeason[sNum] : ""
     ]);
   }
@@ -822,9 +818,9 @@ const ImageResolver = (function () {
       anime.heroImage,
       anime.wideImage,
       anime.landscapeImage,
-      anime.coverImageLarge,
       tmdbData.seasonPoster || anime.tmdbSeasonPoster,
-      episode && (episode.thumbnail || episode.image),
+      anime.tmdbPoster,
+      anime.coverImageLarge,
       anime.coverImage || anime.image
     ]) || "";
   }
@@ -985,8 +981,6 @@ const ImageResolver = (function () {
       anime.tmdbStillsBySeason[sNum] = stills;
       anime.tmdbEpisodesBySeasonNum[sNum] = metas;
       const seasonPoster = tmdbPosterUrl(payload?.season?.poster_path);
-      const seasonBackdrop = firstSeasonStillFromMap(stills);
-      if (seasonBackdrop) anime.tmdbSeasonBackdropsBySeason[sNum] = seasonBackdrop;
       if (seasonPoster) anime.tmdbSeasonPostersBySeason[sNum] = seasonPoster;
       debug(`season-aware: app S${sNum} -> TMDB S${tmdbSeasonNumber} (${Object.keys(stills).length} stills)`);
       if (typeof renderEpisodeList === "function" && typeof state !== "undefined" &&
