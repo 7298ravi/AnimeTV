@@ -2505,32 +2505,32 @@ function renderCarousel() {
       }
     }).catch(() => {});
   }
-  // Warm the next few slides' TMDB backdrops in the background so auto-advance
-  // lands on an already-resolved (instant) hero instead of waiting each time.
-  // Deduped/cheap: the resolver no-ops on already-resolved shows.
+  // The full-bleed hero shows the backdrop with object-fit: cover; 1600 keeps it
+  // crisp on a large/full-screen hero while staying lighter than 1920.
+  const HERO_WIDTHS = [640, 960, 1280, 1600];
+  const HERO_QUALITY = 90;
+  // Warm the next few slides' TMDB backdrops in the background, and PRELOAD the
+  // immediate next slide's hero image, so auto-advance shows it instantly instead
+  // of fetching on change. Deduped/cheap: the resolver no-ops on resolved shows.
+  const preloadHeroImage = (s) => {
+    const a = s && hqImage(String(s.tmdbBackdrop || s.highQualityBackground || "").trim());
+    if (a) { const im = new Image(); im.referrerPolicy = "no-referrer"; im.decoding = "async"; im.src = imageDeliveryUrl(a, 1600, HERO_QUALITY); }
+  };
   if (typeof enrichTmdbImages === "function" && items.length > 1) {
     for (let off = 1; off <= 3; off++) {
       const next = items[(state.carouselIndex + off) % items.length];
-      if (next && String(next.id) !== String(show.id) && !next._tmdbResolved) enrichTmdbImages(next).catch(() => {});
+      if (!next || String(next.id) === String(show.id)) continue;
+      if (next._tmdbResolved) { if (off === 1) preloadHeroImage(next); continue; }
+      enrichTmdbImages(next).then(() => { if (off === 1) preloadHeroImage(next); }).catch(() => {});
     }
   }
   const art = hiResArt || (resolving ? "" : carouselArtworkOrPoster(show));
-  // The hero shows the WHOLE backdrop (object-fit: contain) so a 16:9 image is
-  // never cropped to the wide hero. 1280 is plenty for the contained size and
-  // loads faster than 1600/1920; the TMDB source is sharp so it still looks crisp.
-  const HERO_WIDTHS = [640, 960, 1280];
-  const HERO_QUALITY = 90;
-  const deliveredArt = art ? imageDeliveryUrl(art, 1280, HERO_QUALITY) : "";
+  const deliveredArt = art ? imageDeliveryUrl(art, 1600, HERO_QUALITY) : "";
   const heroSrcSet = art ? imageDeliverySrcSet(art, HERO_WIDTHS, HERO_QUALITY) : "";
-  // A tiny version of the SAME image (loads almost instantly) fills the letterbox
-  // behind the sharp contain'd backdrop, blurred — full picture, no crop, and it
-  // gives immediate ambiance while the sharp file loads. Same image = not "a
-  // second picture".
-  const blurFill = art ? imageDeliveryUrl(art, 320, 55) : "";
   carouselBackdrop.classList.toggle("has-banner", Boolean(art));
-  carouselBackdrop.style.backgroundImage = blurFill
-    ? `url("${blurFill}")`
-    : "linear-gradient(135deg, #121733 0%, #1b1a3b 38%, #0b2637 100%)";
+  // The cover image fills the frame, so the backdrop layer is just a gradient
+  // fallback (shown only while a slide is still resolving — no second picture).
+  carouselBackdrop.style.backgroundImage = "linear-gradient(135deg, #121733 0%, #1b1a3b 38%, #0b2637 100%)";
   if (carouselBackdropImage) {
     carouselBackdropImage.classList.toggle("has-banner", Boolean(art));
     if (art && carouselBackdropImage.getAttribute("src") !== deliveredArt) {
@@ -2741,7 +2741,7 @@ function restartCarouselTimer() {
 // only fetched for the on-air carousel pool (≤ a couple dozen ids), then cached.
 
 const CAROUSEL_IMAGE_HOLD_MS = 2600;   // show the cover this long before the video
-const CAROUSEL_ADVANCE_MS    = 15000;  // auto-advance dwell per slide
+const CAROUSEL_ADVANCE_MS    = 7000;  // auto-advance dwell per slide
 const _trailerCache = new Map();       // anilistId(str) -> {id, site} | null | undefined
 const _TRAILER_LS_PREFIX = "zenkaitv-trailer:";
 let _trailerFetchInFlight = false;
