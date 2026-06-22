@@ -3450,6 +3450,16 @@ function renderSchedule() {
   // Mon..Sun, so shift by 6 to line up.
   const todayIdx = (new Date().getDay() + 6) % 7;
 
+  // Skip the rebuild when nothing changed. render() fires repeatedly during the
+  // post-navigation metadata-enrichment burst; without this guard every one of
+  // those renders tore down and recreated all ~84 schedule <img> elements
+  // (re-decoding artwork each time) — a major cause of the Schedule freeze.
+  const scheduleSig = `${todayIdx}|` + airingShows
+    .map((s) => `${s.id}:${s.day}:${cardEpisodeLabel(s)}:${(s.image || s.images?.poster || s.cover || s.poster || "")}`)
+    .join("|");
+  if (scheduleList.dataset.schedSig === scheduleSig) return;
+  scheduleList.dataset.schedSig = scheduleSig;
+
   scheduleList.innerHTML = days.map((day, idx) => {
     const isToday = idx === todayIdx;
     const shows = airingShows
@@ -12177,47 +12187,74 @@ async function copyExternalUrl(externalUrl) {
   }
 }
 
+// Hover/focus prefetch for a card: warm the backdrop into cache and kick off
+// metadata hydration once, so opening the show feels instant.
+function preloadOpenShow(id) {
+  const show = state.shows.find((entry) => String(entry.id) === String(id));
+  if (!show) return;
+  const preloadArtwork = () => {
+    const knownBackdrop = getWatchBackdropArtwork(show);
+    if (!knownBackdrop) return;
+    const image = new Image();
+    image.referrerPolicy = "no-referrer";
+    image.decoding = "async";
+    image.src = knownBackdrop;
+  };
+  if (!show._artworkPreloaded) { show._artworkPreloaded = true; preloadArtwork(); }
+  if (!show._metadataPreloadStarted && (show.anilistId || show.malId || show.title)) {
+    show._metadataPreloadStarted = true;
+    Promise.resolve(hydrateCanonicalAnimeMetadata(show))
+      .then(() => Promise.allSettled([
+        fetchAniListShowExtras(show),
+        enrichTmdbImages(show)
+      ]))
+      .then(() => {
+        applyTmdbEpisodeMetadata(show);
+        preloadArtwork();
+      })
+      .catch(() => {});
+  }
+}
+
+// Open-show handling is DELEGATED from the document once, instead of attaching
+// three listeners to every [data-open-show] element on every render(). The old
+// per-element wiring re-walked the whole catalog/addon DOM each render (and
+// leaked a fresh pointerenter/focus closure per card per render) — at prod scale
+// that ran for seconds during the post-navigation enrichment render-burst, which
+// is what froze the Schedule/Favorites switch. Delegation is O(1) per render.
+let _openButtonsDelegated = false;
+let _lastPreloadHoverId = "";
 function wireOpenButtons() {
-  document.querySelectorAll("[data-open-show]").forEach((button) => {
-    const preload = () => {
-      const show = state.shows.find((entry) => String(entry.id) === String(button.dataset.openShow));
-      if (!show) return;
-      const preloadArtwork = () => {
-        const knownBackdrop = getWatchBackdropArtwork(show);
-        if (!knownBackdrop) return;
-        const image = new Image();
-        image.referrerPolicy = "no-referrer";
-        image.decoding = "async";
-        image.src = knownBackdrop;
-      };
-      preloadArtwork();
-      if (!show._metadataPreloadStarted && (show.anilistId || show.malId || show.title)) {
-        show._metadataPreloadStarted = true;
-        Promise.resolve(hydrateCanonicalAnimeMetadata(show))
-          .then(() => Promise.allSettled([
-            fetchAniListShowExtras(show),
-            enrichTmdbImages(show)
-          ]))
-          .then(() => {
-            applyTmdbEpisodeMetadata(show);
-            preloadArtwork();
-          })
-          .catch(() => {});
-      }
-    };
-    button.addEventListener("pointerenter", preload, { once: true, passive: true });
-    button.addEventListener("focus", preload, { once: true, passive: true });
-    button.onclick = (e) => {
-      // The card is now an <a href="/anime/<slug>">. Modified clicks (Ctrl/Cmd/
-      // Shift) and middle-click let the browser open that link in a NEW TAB
-      // natively — don't hijack those. Plain left-click = in-app navigation.
-      if (e && (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1)) return;
-      e?.preventDefault();
-      openShow(button.dataset.openShow, {
-        seasonNumber: button.dataset.openSeason,
-        episodeNumber: button.dataset.openEpisode
-      });
-    };
+  if (_openButtonsDelegated) return;
+  _openButtonsDelegated = true;
+  const buttonFrom = (event) => (event.target && event.target.closest)
+    ? event.target.closest("[data-open-show]")
+    : null;
+  // pointerover/focusin bubble (unlike pointerenter/focus), so one document
+  // listener covers every card. Dedupe on the hovered id so we don't re-run the
+  // state.shows lookup on every intra-card mousemove.
+  const onHover = (event) => {
+    const button = buttonFrom(event);
+    if (!button) return;
+    const id = button.dataset.openShow;
+    if (id === _lastPreloadHoverId) return;
+    _lastPreloadHoverId = id;
+    preloadOpenShow(id);
+  };
+  document.addEventListener("pointerover", onHover, { passive: true });
+  document.addEventListener("focusin", onHover);
+  document.addEventListener("click", (e) => {
+    const button = buttonFrom(e);
+    if (!button) return;
+    // The card is an <a href="/anime/<slug>">. Modified clicks (Ctrl/Cmd/Shift)
+    // and middle-click let the browser open that link in a NEW TAB natively —
+    // don't hijack those. Plain left-click = in-app navigation.
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+    e.preventDefault();
+    openShow(button.dataset.openShow, {
+      seasonNumber: button.dataset.openSeason,
+      episodeNumber: button.dataset.openEpisode
+    });
   });
 }
 
@@ -12244,7 +12281,12 @@ function getFocusableItems() {
 }
 
 function refreshFocusables() {
-  getFocusableItems().forEach((element) => element.classList.remove("is-tv-focused"));
+  // Only elements that actually carry the TV focus ring need clearing (usually
+  // 0–1). The old form called getFocusableItems(), which does a `.closest()`
+  // tree-walk for EVERY ".focusable" in the document (~30ms on a large catalog/
+  // addon DOM) and ran on every render() — a big contributor to the route-switch
+  // freeze. This is behaviour-equivalent and effectively O(1).
+  document.querySelectorAll(".is-tv-focused").forEach((element) => element.classList.remove("is-tv-focused"));
 }
 
 function setTvFocus(element) {
