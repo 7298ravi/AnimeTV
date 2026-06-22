@@ -2864,6 +2864,19 @@ body.soft-focus .is-tv-focused {
   box-shadow: 0 0 0 0.28rem rgba(0, 210, 255, 0.13);
 }
 
+/* Text fields report :focus-visible on a plain MOUSE CLICK too (browsers assume
+   keyboard interaction is coming), so the big white keyboard ring would flash on
+   every click. Drive their ring from .is-tv-focused only — which our focusin
+   handler adds for keyboard/D-pad focus and strips for pointer focus — so the
+   ring appears just on Tab, while mouse clicks keep the subtle field :focus
+   style. */
+input.focusable:focus-visible:not(.is-tv-focused),
+textarea.focusable:focus-visible:not(.is-tv-focused),
+select.focusable:focus-visible:not(.is-tv-focused) {
+  outline: none;
+  box-shadow: none;
+}
+
 .primary-action.focusable:focus-visible,
 .secondary-action.focusable:focus-visible,
 .play-action.focusable:focus-visible,
