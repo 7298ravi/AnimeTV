@@ -71,6 +71,24 @@ body {
   background-color: #050710;
 }
 
+/* App-like UX: a stray drag or Ctrl+A shouldn't paint the whole chrome blue.
+   Disable text selection globally and re-enable it only on the anime title (the
+   one thing worth copying) — plus form fields, which must stay editable. */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+.watch-title,
+.carousel-info h2,
+.show-title,
+.schedule-title,
+input,
+textarea,
+[contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 body[data-theme="light"] {
   background:
     radial-gradient(circle at 14% 0%, rgba(0, 210, 255, 0.16), transparent 28rem),
