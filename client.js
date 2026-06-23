@@ -2496,8 +2496,14 @@ function renderCarousel() {
   // (_tmdbResolved flips true on every resolve outcome) falls back to its banner as
   // the single image. Bounded: resolve once per show, current item only.
   const hiResArt = hqImage(String(show.tmdbBackdrop || show.highQualityBackground || "").trim());
-  const resolving = !hiResArt && !show._tmdbResolved && typeof enrichTmdbImages === "function";
+  // Resolve the backdrop AT MOST ONCE per show (_carouselResolveTried). Without
+  // this guard, a show whose TMDB resolution THROWS (network error) never sets
+  // _tmdbResolved, so `resolving` stays true and the .then below re-renders the
+  // carousel forever — an infinite loop that freezes the tab and spams the proxy.
+  // After one attempt we just fall back to the banner.
+  const resolving = !hiResArt && !show._tmdbResolved && !show._carouselResolveTried && typeof enrichTmdbImages === "function";
   if (resolving) {
+    show._carouselResolveTried = true;
     enrichTmdbImages(show).then(() => {
       if (state.route === "home" && String(items[state.carouselIndex]?.id || "") === String(show.id)) {
         _carouselPaintedId = null; // force a repaint now that the backdrop resolved
